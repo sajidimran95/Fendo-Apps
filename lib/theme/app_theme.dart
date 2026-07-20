@@ -7,6 +7,8 @@ import 'app_colors.dart';
 class AppTheme {
   AppTheme._();
 
+  static ThemeData get dark => light;
+
   static ThemeData get light {
     final base = ThemeData(
       useMaterial3: true,
@@ -41,7 +43,8 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.surface,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
         hintStyle: GoogleFonts.manrope(
           color: AppColors.textMuted,
           fontSize: 15,
@@ -57,7 +60,8 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppColors.borderFocus, width: 1.6),
+          borderSide:
+              const BorderSide(color: AppColors.borderFocus, width: 1.6),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
@@ -71,15 +75,26 @@ class AppTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           elevation: 0,
-          backgroundColor: AppColors.forest,
+          backgroundColor: AppColors.mint,
           foregroundColor: Colors.white,
           minimumSize: const Size.fromHeight(56),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           textStyle: GoogleFonts.manrope(
             fontSize: 16,
             fontWeight: FontWeight.w700,
           ),
         ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.mint,
+          foregroundColor: Colors.white,
+        ),
+      ),
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+        backgroundColor: AppColors.mint,
+        foregroundColor: Colors.white,
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
@@ -90,15 +105,36 @@ class AppTheme {
           ),
         ),
       ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.forestSoft,
+          side: const BorderSide(color: AppColors.border),
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: AppColors.surfaceMuted,
+        selectedColor: AppColors.mintWash,
+        side: const BorderSide(color: AppColors.border),
+        labelStyle: GoogleFonts.manrope(color: AppColors.forestSoft),
+      ),
       dividerTheme: const DividerThemeData(
         color: AppColors.border,
         thickness: 1,
       ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: AppColors.forest,
+        contentTextStyle: GoogleFonts.manrope(
+          color: Colors.white,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        backgroundColor: AppColors.surface,
+        selectedItemColor: AppColors.mint,
+        unselectedItemColor: AppColors.textMuted,
+      ),
     );
   }
-
-  /// Kept for compatibility — app uses light modern theme.
-  static ThemeData get dark => light;
 
   static TextTheme get _textTheme {
     return TextTheme(

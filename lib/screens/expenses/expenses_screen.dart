@@ -107,7 +107,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           );
           _load();
         },
-        backgroundColor: AppColors.forest,
+        backgroundColor: AppColors.mint,
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add),
         label: Text(

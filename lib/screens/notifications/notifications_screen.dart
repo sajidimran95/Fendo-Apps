@@ -7,6 +7,7 @@ import '../../services/notifications_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
 import '../../widgets/common/app_widgets.dart';
+import 'notification_detail_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -22,7 +23,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
   Future<void> _load() async {
@@ -40,18 +41,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
-  Future<void> _markRead(AppNotification n) async {
-    if (n.read) return;
-    try {
-      await NotificationsController.instance.markRead(n.id);
-      if (!mounted) return;
-      setState(() {
-        _items = NotificationsController.instance.items;
-      });
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      showApiError(context, e);
-    }
+  Future<void> _openDetail(AppNotification n) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => NotificationDetailScreen(notification: n),
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _items = NotificationsController.instance.items;
+    });
   }
 
   Future<void> _markAllRead() async {
@@ -110,7 +109,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               else
                 ..._items.map((n) {
                   return SoftTile(
-                    onTap: () => _markRead(n),
+                    onTap: () => _openDetail(n),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -144,6 +143,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                               const SizedBox(height: 2),
                               Text(
                                 n.body,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                                 style: GoogleFonts.manrope(
                                   fontSize: 13,
                                   color: AppColors.textSecondary,
@@ -152,14 +153,26 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             ],
                           ),
                         ),
-                        if (n.timeAgo.isNotEmpty)
-                          Text(
-                            n.timeAgo,
-                            style: GoogleFonts.manrope(
-                              fontSize: 12,
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (n.timeAgo.isNotEmpty)
+                              Text(
+                                n.timeAgo,
+                                style: GoogleFonts.manrope(
+                                  fontSize: 12,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            const SizedBox(height: 8),
+                            const Icon(
+                              Icons.chevron_right_rounded,
                               color: AppColors.textMuted,
+                              size: 20,
                             ),
-                          ),
+                          ],
+                        ),
                       ],
                     ),
                   );

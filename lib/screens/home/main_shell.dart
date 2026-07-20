@@ -120,7 +120,7 @@ class _NavItem extends StatelessWidget {
                 style: GoogleFonts.manrope(
                   fontSize: 11,
                   fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  color: selected ? AppColors.forest : AppColors.textMuted,
+                  color: selected ? AppColors.mint : AppColors.textMuted,
                 ),
               ),
             ],

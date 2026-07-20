@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../theme/app_colors.dart';
 
-/// Soft mesh atmosphere — modern light auth backdrop.
+/// Soft light mesh with violet brand accents.
 class AuthBackground extends StatefulWidget {
   const AuthBackground({super.key, required this.child});
 
@@ -49,7 +49,7 @@ class _AuthBackgroundState extends State<AuthBackground>
                 right: -80,
                 child: _Blob(
                   size: 320,
-                  color: AppColors.mint.withValues(alpha: 0.22),
+                  color: AppColors.mint.withValues(alpha: 0.18),
                 ),
               ),
               Positioned(
@@ -57,7 +57,7 @@ class _AuthBackgroundState extends State<AuthBackground>
                 left: -100,
                 child: _Blob(
                   size: 260,
-                  color: const Color(0xFF7ED9C4).withValues(alpha: 0.18),
+                  color: const Color(0xFF9B87FF).withValues(alpha: 0.14),
                 ),
               ),
               Positioned(
@@ -67,7 +67,7 @@ class _AuthBackgroundState extends State<AuthBackground>
                   angle: t * math.pi * 0.05,
                   child: _Blob(
                     size: 200,
-                    color: AppColors.amber.withValues(alpha: 0.10),
+                    color: AppColors.amber.withValues(alpha: 0.08),
                   ),
                 ),
               ),
@@ -79,7 +79,7 @@ class _AuthBackgroundState extends State<AuthBackground>
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        Colors.white.withValues(alpha: 0.15),
+                        Colors.white.withValues(alpha: 0.35),
                         Colors.transparent,
                         AppColors.canvas.withValues(alpha: 0.55),
                       ],

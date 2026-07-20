@@ -143,7 +143,7 @@ class _SettlementsScreenState extends State<SettlementsScreen> {
                         child: FilledButton(
                           onPressed: () => Navigator.pop(ctx, true),
                           style: FilledButton.styleFrom(
-                            backgroundColor: AppColors.forest,
+                            backgroundColor: AppColors.mint,
                           ),
                           child: const Text('Accept'),
                         ),
@@ -385,7 +385,7 @@ class _SettlementsScreenState extends State<SettlementsScreen> {
                                 child: FilledButton(
                                   onPressed: () => _accept(r),
                                   style: FilledButton.styleFrom(
-                                    backgroundColor: AppColors.forest,
+                                    backgroundColor: AppColors.mint,
                                   ),
                                   child: const Text('Accept'),
                                 ),

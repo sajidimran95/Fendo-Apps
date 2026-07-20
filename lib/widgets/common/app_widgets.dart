@@ -128,7 +128,7 @@ class MoneyText extends StatelessWidget {
       color = AppColors.forest;
       prefix = '';
     } else if (positive!) {
-      color = AppColors.mint;
+      color = AppColors.success;
       prefix = '+';
     } else {
       color = AppColors.coral;
@@ -196,7 +196,9 @@ class SoftTile extends StatelessWidget {
             padding: padding,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: AppColors.border.withValues(alpha: 0.7)),
+              border: Border.all(
+                color: AppColors.border.withValues(alpha: 0.7),
+              ),
             ),
             child: child,
           ),

@@ -1,46 +1,47 @@
 import 'package:flutter/material.dart';
 
-/// Fendo — light modern palette (stone + forest + mint).
+/// Fendo — light canvas with site violet accents (not full dark mode).
 class AppColors {
   AppColors._();
 
-  static const Color canvas = Color(0xFFF3F7F5);
-  static const Color canvasDeep = Color(0xFFE6F0EC);
+  static const Color canvas = Color(0xFFF6F4FB);
+  static const Color canvasDeep = Color(0xFFEDE8F8);
   static const Color surface = Color(0xFFFFFFFF);
-  static const Color surfaceMuted = Color(0xFFECF2EF);
+  static const Color surfaceMuted = Color(0xFFF0ECF8);
 
-  static const Color forest = Color(0xFF0D2B24);
-  static const Color forestSoft = Color(0xFF1A3D34);
-  static const Color mint = Color(0xFF00B894);
-  static const Color mintSoft = Color(0xFF26C9A5);
-  static const Color mintWash = Color(0xFFD4F5EC);
+  static const Color forest = Color(0xFF1A1135);
+  static const Color forestSoft = Color(0xFF2A2248);
+
+  /// Brand violet — matches fendo.app CTAs
+  static const Color mint = Color(0xFF7B61FF);
+  static const Color mintSoft = Color(0xFF9B87FF);
+  static const Color mintWash = Color(0xFFE8E2FF);
+  static const Color mintDim = Color(0xFF5A45D6);
 
   static const Color amber = Color(0xFFF0A500);
-  static const Color coral = Color(0xFFE85D4C);
+  static const Color coral = Color(0xFFFF5A5F);
 
-  static const Color textPrimary = Color(0xFF0D2B24);
-  static const Color textSecondary = Color(0xFF5A6F68);
-  static const Color textMuted = Color(0xFF8A9B94);
+  static const Color textPrimary = Color(0xFF1A1135);
+  static const Color textSecondary = Color(0xFF6B6285);
+  static const Color textMuted = Color(0xFF9A93B0);
 
-  static const Color border = Color(0xFFD5E0DB);
-  static const Color borderFocus = Color(0xFF00B894);
-  static const Color error = Color(0xFFE85D4C);
-  static const Color success = Color(0xFF00B894);
+  static const Color border = Color(0xFFDDD6F0);
+  static const Color borderFocus = Color(0xFF7B61FF);
+  static const Color error = Color(0xFFFF5A5F);
+  static const Color success = Color(0xFF2ECC71);
 
-  // Legacy aliases used by older screens during redesign
   static const Color ink = forest;
   static const Color inkElevated = forestSoft;
   static const Color surfaceSoft = surfaceMuted;
-  static const Color mintDim = Color(0xFF008F74);
-  static const Color textPrimaryDark = Color(0xFFF2F7F5);
+  static const Color textPrimaryDark = Color(0xFFF6F4FB);
 
   static const LinearGradient heroWash = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
     colors: [
-      Color(0xFFE8F6F1),
-      Color(0xFFF3F7F5),
-      Color(0xFFF7FAF8),
+      Color(0xFFF0ECFF),
+      Color(0xFFF6F4FB),
+      Color(0xFFFAF9FD),
     ],
   );
 
@@ -48,8 +49,8 @@ class AppColors {
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     colors: [
-      Color(0xFF0D2B24),
-      Color(0xFF164A3D),
+      Color(0xFF7B61FF),
+      Color(0xFF5A45D6),
     ],
   );
 
@@ -57,8 +58,17 @@ class AppColors {
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     colors: [
-      Color(0xFF00B894),
-      Color(0xFF0D2B24),
+      Color(0xFF9B87FF),
+      Color(0xFF7B61FF),
+    ],
+  );
+
+  static const LinearGradient headlineGlow = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [
+      Color(0xFF1A1135),
+      Color(0xFF5A45D6),
     ],
   );
 }

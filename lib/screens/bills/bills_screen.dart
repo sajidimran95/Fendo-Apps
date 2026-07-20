@@ -69,20 +69,31 @@ class _BillsScreenState extends State<BillsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.canvas,
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'fab_bills',
-        onPressed: () async {
-          await Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const CreateBillScreen()),
-          );
-          _load();
-        },
-        backgroundColor: AppColors.forest,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
-        label: Text(
-          'New bill',
-          style: GoogleFonts.manrope(fontWeight: FontWeight.w700),
+      floatingActionButton: Transform.scale(
+        scale: 0.88,
+        alignment: Alignment.bottomRight,
+        child: FloatingActionButton.extended(
+          heroTag: 'fab_bills',
+          onPressed: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const CreateBillScreen()),
+            );
+            _load();
+          },
+          backgroundColor: AppColors.mint,
+          foregroundColor: Colors.white,
+          elevation: 2,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          extendedIconLabelSpacing: 6,
+          extendedPadding: const EdgeInsets.symmetric(horizontal: 14),
+          icon: const Icon(Icons.add_rounded, size: 18),
+          label: Text(
+            'New bill',
+            style: GoogleFonts.manrope(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
       ),
       body: SafeArea(

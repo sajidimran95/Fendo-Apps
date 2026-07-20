@@ -679,7 +679,7 @@ class _GroupPicker extends StatelessWidget {
           return AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             child: Material(
-              color: active ? AppColors.forest : AppColors.surface,
+              color: active ? AppColors.mint : AppColors.surface,
               borderRadius: BorderRadius.circular(14),
               child: InkWell(
                 onTap: () => onChanged(g),
@@ -690,7 +690,7 @@ class _GroupPicker extends StatelessWidget {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                      color: active ? AppColors.forest : AppColors.border,
+                      color: active ? AppColors.mint : AppColors.border,
                     ),
                   ),
                   child: Text(
