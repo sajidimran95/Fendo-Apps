@@ -1,13 +1,41 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../../data/mock_data.dart';
+import '../../core/network/api_exception.dart';
+import '../../models/bill_model.dart';
+import '../../services/bills_controller.dart';
 import '../../theme/app_colors.dart';
-import '../../widgets/auth/auth_widgets.dart';
+import '../../utils/api_feedback.dart';
 import '../../widgets/common/app_widgets.dart';
+import 'bill_detail_screen.dart';
+import 'create_bill_screen.dart';
 
-class BillsScreen extends StatelessWidget {
+class BillsScreen extends StatefulWidget {
   const BillsScreen({super.key});
+
+  @override
+  State<BillsScreen> createState() => _BillsScreenState();
+}
+
+class _BillsScreenState extends State<BillsScreen> {
+  static const _statuses = [
+    null,
+    'upcoming',
+    'due_today',
+    'overdue',
+    'paid',
+    'partial',
+  ];
+
+  bool _loading = true;
+  List<BillModel> _items = const [];
+  String? _status;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
 
   Color _statusColor(String s) {
     switch (s) {
@@ -17,8 +45,23 @@ class BillsScreen extends StatelessWidget {
         return AppColors.coral;
       case 'paid':
         return AppColors.mint;
+      case 'partial':
+        return AppColors.forestSoft;
       default:
         return AppColors.forestSoft;
+    }
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final list = await BillsController.instance.loadBills(status: _status);
+      if (!mounted) return;
+      setState(() => _items = list);
+    } on ApiException catch (e) {
+      if (mounted) showApiError(context, e);
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -28,10 +71,11 @@ class BillsScreen extends StatelessWidget {
       backgroundColor: AppColors.canvas,
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'fab_bills',
-        onPressed: () {
-          Navigator.of(context).push(
+        onPressed: () async {
+          await Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const CreateBillScreen()),
           );
+          _load();
         },
         backgroundColor: AppColors.forest,
         foregroundColor: Colors.white,
@@ -42,124 +86,106 @@ class BillsScreen extends StatelessWidget {
         ),
       ),
       body: SafeArea(
-        child: ListView(
-          children: [
-            const AppHeader(
-              title: 'Bills',
-              subtitle: 'Upcoming & recurring',
-            ),
-            ...MockData.bills.map((b) {
-              return SoftTile(
-                onTap: () => showStaticSnack(context, 'Bill detail (static)'),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            b.name,
-                            style: GoogleFonts.manrope(
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.forest,
-                            ),
-                          ),
-                          Text(
-                            '${b.groupName} · Due ${b.dueDate}',
-                            style: GoogleFonts.manrope(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          StatusChip(
-                            b.status.replaceAll('_', ' '),
-                            color: _statusColor(b.status),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        MoneyText(b.amount, positive: false, size: 16),
-                        TextButton(
-                          onPressed: () =>
-                              showStaticSnack(context, 'Marked paid (static)'),
-                          child: const Text('Pay'),
+        child: RefreshIndicator(
+          color: AppColors.mint,
+          onRefresh: _load,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              const AppHeader(
+                title: 'Bills',
+                subtitle: 'Upcoming & recurring',
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: _statuses.map((s) {
+                      final label = s == null ? 'all' : s.replaceAll('_', ' ');
+                      final selected = _status == s;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          label: Text(label),
+                          selected: selected,
+                          onSelected: (_) {
+                            setState(() => _status = s);
+                            _load();
+                          },
+                          selectedColor: AppColors.mintWash,
                         ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+              if (_loading && _items.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(top: 80),
+                  child: Center(
+                    child: CircularProgressIndicator(color: AppColors.mint),
+                  ),
+                )
+              else if (_items.isEmpty)
+                const EmptyHint(message: 'No bills for this filter')
+              else
+                ..._items.map(
+                  (b) => SoftTile(
+                    onTap: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => BillDetailScreen(billId: b.id),
+                        ),
+                      );
+                      _load();
+                    },
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                b.name,
+                                style: GoogleFonts.manrope(
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.forest,
+                                ),
+                              ),
+                              Text(
+                                '${b.groupName ?? 'Group'} · Due ${b.dueDate}',
+                                style: GoogleFonts.manrope(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 6,
+                                children: [
+                                  StatusChip(
+                                    b.status.replaceAll('_', ' '),
+                                    color: _statusColor(b.status),
+                                  ),
+                                  if (b.isRecurring)
+                                    StatusChip(
+                                      b.frequency ?? 'recurring',
+                                      color: AppColors.mint,
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        MoneyText(b.amount, positive: false, size: 16),
                       ],
                     ),
-                  ],
+                  ),
                 ),
-              );
-            }),
-            const SizedBox(height: 80),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class CreateBillScreen extends StatefulWidget {
-  const CreateBillScreen({super.key});
-
-  @override
-  State<CreateBillScreen> createState() => _CreateBillScreenState();
-}
-
-class _CreateBillScreenState extends State<CreateBillScreen> {
-  final _name = TextEditingController();
-  final _amount = TextEditingController();
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _amount.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.canvas,
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.only(bottom: 32),
-          children: [
-            AppHeader(
-              title: 'New bill',
-              onBack: () => Navigator.pop(context),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                children: [
-                  AuthTextField(
-                    controller: _name,
-                    label: 'Bill name',
-                    hint: 'Electricity',
-                  ),
-                  const SizedBox(height: 14),
-                  AuthTextField(
-                    controller: _amount,
-                    label: 'Amount',
-                    hint: '150.00',
-                    keyboardType: TextInputType.number,
-                  ),
-                  const SizedBox(height: 28),
-                  AuthPrimaryButton(
-                    label: 'Create bill',
-                    onPressed: () {
-                      showStaticSnack(context, 'Bill created (static)');
-                      Navigator.pop(context);
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ],
+              const SizedBox(height: 80),
+            ],
+          ),
         ),
       ),
     );
