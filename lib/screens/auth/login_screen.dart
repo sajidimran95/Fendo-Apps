@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/config/api_config.dart';
 import '../../core/network/api_exception.dart';
 import '../../navigation/app_nav.dart';
 import '../../services/auth_controller.dart';
@@ -45,10 +46,13 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _onLogin() async {
-    final email = _emailCtrl.text.trim();
-    final password = _passwordCtrl.text;
+    final email = _emailCtrl.text.trim().isEmpty
+        ? 'demo@fendo.app'
+        : _emailCtrl.text.trim();
+    final password = _passwordCtrl.text.isEmpty ? 'demo' : _passwordCtrl.text;
 
-    if (email.isEmpty || password.isEmpty) {
+    if (!ApiConfig.demoAuth &&
+        (_emailCtrl.text.trim().isEmpty || _passwordCtrl.text.isEmpty)) {
       showApiError(
         context,
         ApiException(message: 'Enter email and password'),
@@ -84,11 +88,23 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
-  void _socialLogin(String provider) {
-    showApiMessage(
-      context,
-      '$provider sign-in API is ready — connect Google/Apple SDK next.',
-    );
+  Future<void> _socialLogin(String provider) async {
+    setState(() => _loading = true);
+    try {
+      await AuthController.instance.socialLogin(
+        provider: provider.toLowerCase(),
+        providerId: 'demo-$provider',
+        email: 'demo@fendo.app',
+        name: 'Fendo User',
+      );
+      if (!mounted) return;
+      goToHome(context);
+    } catch (e) {
+      if (!mounted) return;
+      showApiError(context, e);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
@@ -147,7 +163,9 @@ class _LoginScreenState extends State<LoginScreen>
                   begin: 0.18,
                   end: 0.55,
                   child: Text(
-                    'Sign in with your Fendo account.',
+                    ApiConfig.demoAuth
+                        ? 'Demo mode — any email & password works.'
+                        : 'Sign in with your Fendo account.',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
@@ -234,8 +252,8 @@ class _LoginScreenState extends State<LoginScreen>
                   begin: 0.58,
                   end: 0.96,
                   child: AuthSocialRow(
-                    onGoogle: () => _socialLogin('Google'),
-                    onApple: () => _socialLogin('Apple'),
+                    onGoogle: _loading ? () {} : () => _socialLogin('Google'),
+                    onApple: _loading ? () {} : () => _socialLogin('Apple'),
                   ),
                 ),
                 const SizedBox(height: 32),

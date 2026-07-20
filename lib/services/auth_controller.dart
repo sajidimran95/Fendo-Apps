@@ -1,10 +1,12 @@
 import 'package:flutter/foundation.dart';
 
+import '../core/config/api_config.dart';
 import '../core/network/api_client.dart';
 import '../core/network/api_exception.dart';
 import '../core/storage/token_storage.dart';
 import '../models/user_model.dart';
 import 'auth_api.dart';
+import 'user_api.dart';
 
 /// App-wide auth session: token + current user.
 class AuthController extends ChangeNotifier {
@@ -20,17 +22,21 @@ class AuthController extends ChangeNotifier {
     },
   );
   late final AuthApi _api = AuthApi(_client);
+  late final UserApi _userApi = UserApi(_client);
 
   AuthApi get api => _api;
+  UserApi get userApi => _userApi;
   ApiClient get client => _client;
 
   UserModel? _user;
   bool _ready = false;
   bool _authenticated = false;
+  bool _demo = false;
 
   UserModel? get user => _user;
   bool get isReady => _ready;
   bool get isAuthenticated => _authenticated;
+  bool get isDemo => _demo;
 
   String get deviceName {
     if (kIsWeb) return 'web';
@@ -42,6 +48,17 @@ class AuthController extends ChangeNotifier {
     if (token == null || token.isEmpty) {
       _authenticated = false;
       _user = null;
+      _ready = true;
+      notifyListeners();
+      return;
+    }
+
+    if (token == ApiConfig.demoToken) {
+      final email = await _storage.readDemoEmail() ?? 'demo@fendo.app';
+      final name = await _storage.readDemoName() ?? _nameFromEmail(email);
+      _user = _demoUser(email: email, name: name);
+      _authenticated = true;
+      _demo = true;
       _ready = true;
       notifyListeners();
       return;
@@ -83,6 +100,10 @@ class AuthController extends ChangeNotifier {
     required String email,
     required String password,
   }) async {
+    if (ApiConfig.demoAuth) {
+      return _loginDemo(email: email);
+    }
+
     final res = await _api.login(
       email: email,
       password: password,
@@ -103,6 +124,10 @@ class AuthController extends ChangeNotifier {
     required String name,
     String? avatar,
   }) async {
+    if (ApiConfig.demoAuth) {
+      return _loginDemo(email: email, name: name);
+    }
+
     final res = await _api.socialLogin(
       provider: provider,
       providerId: providerId,
@@ -119,27 +144,81 @@ class AuthController extends ChangeNotifier {
     return res.user;
   }
 
+  Future<UserModel> _loginDemo({
+    required String email,
+    String? name,
+  }) async {
+    final resolvedName = (name != null && name.trim().isNotEmpty)
+        ? name.trim()
+        : _nameFromEmail(email);
+    final user = _demoUser(email: email, name: resolvedName);
+    await _storage.saveDemoIdentity(email: email, name: resolvedName);
+    _demo = true;
+    await applyAuth(
+      user: user,
+      accessToken: ApiConfig.demoToken,
+    );
+    return user;
+  }
+
+  UserModel _demoUser({required String email, required String name}) {
+    return UserModel(
+      id: 1,
+      name: name,
+      email: email,
+      phone: '+1 555 0100',
+      currency: 'USD',
+      timezone: 'UTC',
+      language: 'en',
+    );
+  }
+
+  String _nameFromEmail(String email) {
+    final local = email.split('@').first.trim();
+    if (local.isEmpty) return 'Fendo User';
+    return local[0].toUpperCase() + local.substring(1);
+  }
+
   Future<void> logout() async {
-    try {
-      await _api.logout();
-    } on ApiException {
-      // Still clear local session.
+    final token = await _storage.readAccessToken();
+    if (token != ApiConfig.demoToken) {
+      try {
+        await _api.logout();
+      } on ApiException {
+        // Still clear local session.
+      }
     }
     await _clearLocal();
   }
 
   Future<UserModel> refreshMe() async {
-    final me = await _api.me();
-    _user = me;
+    final token = await _storage.readAccessToken();
+    if (token == ApiConfig.demoToken) {
+      return _user!;
+    }
+    try {
+      _user = await _userApi.getProfile();
+    } on ApiException {
+      _user = await _api.me();
+    }
     _authenticated = true;
     notifyListeners();
-    return me;
+    return _user!;
   }
+
+  void setUser(UserModel user) {
+    _user = user;
+    _authenticated = true;
+    notifyListeners();
+  }
+
+  Future<void> clearSession() => _clearLocal();
 
   Future<void> _clearLocal() async {
     await _storage.clear();
     _user = null;
     _authenticated = false;
+    _demo = false;
     notifyListeners();
   }
 }

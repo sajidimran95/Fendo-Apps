@@ -63,8 +63,36 @@ class ApiClient {
   Future<Response<dynamic>> post(
     String path, {
     Object? data,
+    Options? options,
   }) {
-    return _guard(() => _dio.post(path, data: data));
+    return _guard(() => _dio.post(path, data: data, options: options));
+  }
+
+  Future<Response<dynamic>> put(
+    String path, {
+    Object? data,
+  }) {
+    return _guard(() => _dio.put(path, data: data));
+  }
+
+  Future<Response<dynamic>> delete(
+    String path, {
+    Object? data,
+  }) {
+    return _guard(() => _dio.delete(path, data: data));
+  }
+
+  Future<Response<dynamic>> postMultipart(
+    String path, {
+    required FormData data,
+  }) {
+    return _guard(
+      () => _dio.post(
+        path,
+        data: data,
+        options: Options(contentType: 'multipart/form-data'),
+      ),
+    );
   }
 
   Future<T> _guard<T>(Future<T> Function() request) async {
@@ -125,4 +153,34 @@ Map<String, dynamic> unwrapMap(dynamic body) {
     return Map<String, dynamic>.from(data);
   }
   return map;
+}
+
+/// Supports list payloads at root or under `data` / named keys.
+List<Map<String, dynamic>> unwrapList(
+  dynamic body, {
+  String? key,
+}) {
+  List<dynamic>? list;
+  if (body is List) {
+    list = body;
+  } else if (body is Map) {
+    final map = Map<String, dynamic>.from(body);
+    final data = map['data'];
+    if (data is List) {
+      list = data;
+    } else if (data is Map && key != null && data[key] is List) {
+      list = data[key] as List;
+    } else if (key != null && map[key] is List) {
+      list = map[key] as List;
+    }
+  }
+
+  if (list == null) {
+    throw ApiException(message: 'Invalid list response');
+  }
+
+  return list
+      .whereType<Map>()
+      .map((e) => Map<String, dynamic>.from(e))
+      .toList();
 }
