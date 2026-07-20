@@ -1,13 +1,97 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../../data/mock_data.dart';
+import '../../core/network/api_exception.dart';
+import '../../models/expense_model.dart';
+import '../../models/group_model.dart';
+import '../../services/expenses_controller.dart';
+import '../../services/groups_controller.dart';
 import '../../theme/app_colors.dart';
-import '../../widgets/auth/auth_widgets.dart';
+import '../../utils/api_feedback.dart';
 import '../../widgets/common/app_widgets.dart';
+import 'create_expense_screen.dart';
+import 'expense_detail_screen.dart';
 
-class ExpensesScreen extends StatelessWidget {
-  const ExpensesScreen({super.key});
+class ExpensesScreen extends StatefulWidget {
+  const ExpensesScreen({super.key, this.initialGroupId});
+
+  final int? initialGroupId;
+
+  @override
+  State<ExpensesScreen> createState() => _ExpensesScreenState();
+}
+
+class _ExpensesScreenState extends State<ExpensesScreen> {
+  bool _loading = true;
+  List<ExpenseModel> _items = const [];
+  List<GroupModel> _groups = const [];
+  int? _groupId;
+  DateTime? _from;
+  DateTime? _to;
+
+  @override
+  void initState() {
+    super.initState();
+    _groupId = widget.initialGroupId;
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    try {
+      await GroupsController.instance.loadGroups();
+      if (mounted) {
+        setState(() => _groups = GroupsController.instance.groups);
+      }
+    } catch (_) {}
+    await _load();
+  }
+
+  String? get _fromStr => _from == null ? null : _fmt(_from!);
+  String? get _toStr => _to == null ? null : _fmt(_to!);
+
+  String _fmt(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final list = await ExpensesController.instance.loadExpenses(
+        groupId: _groupId,
+        from: _fromStr,
+        to: _toStr,
+      );
+      if (!mounted) return;
+      setState(() => _items = list);
+    } on ApiException catch (e) {
+      if (mounted) showApiError(context, e);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _pickFrom() async {
+    final d = await showDatePicker(
+      context: context,
+      initialDate: _from ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (d == null) return;
+    setState(() => _from = d);
+    _load();
+  }
+
+  Future<void> _pickTo() async {
+    final d = await showDatePicker(
+      context: context,
+      initialDate: _to ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (d == null) return;
+    setState(() => _to = d);
+    _load();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,10 +99,13 @@ class ExpensesScreen extends StatelessWidget {
       backgroundColor: AppColors.canvas,
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'fab_expenses',
-        onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const CreateExpenseScreen()),
+        onPressed: () async {
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => CreateExpenseScreen(initialGroupId: _groupId),
+            ),
           );
+          _load();
         },
         backgroundColor: AppColors.forest,
         foregroundColor: Colors.white,
@@ -29,220 +116,147 @@ class ExpensesScreen extends StatelessWidget {
         ),
       ),
       body: SafeArea(
-        child: ListView(
-          children: [
-            AppHeader(
-              title: 'Expenses',
-              subtitle: 'All shared spending',
-              onBack: () => Navigator.pop(context),
-            ),
-            ...MockData.expenses.map((e) {
-              return SoftTile(
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => ExpenseDetailScreen(expense: e),
-                    ),
-                  );
-                },
-                child: Row(
+        child: RefreshIndicator(
+          color: AppColors.mint,
+          onRefresh: _load,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              AppHeader(
+                title: 'Expenses',
+                subtitle: 'All shared spending',
+                onBack: () => Navigator.pop(context),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: AppColors.mintWash,
-                        borderRadius: BorderRadius.circular(12),
+                    FilterChip(
+                      label: Text(
+                        _groupId == null
+                            ? 'All groups'
+                            : _groups
+                                .where((g) => g.id == _groupId)
+                                .map((g) => g.name)
+                                .firstOrNull ??
+                                'Group',
                       ),
-                      child: const Icon(
-                        Icons.shopping_bag_outlined,
-                        color: AppColors.mint,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            e.title,
-                            style: GoogleFonts.manrope(
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.forest,
+                      selected: _groupId != null,
+                      onSelected: (_) async {
+                        final selected = await showModalBottomSheet<int?>(
+                          context: context,
+                          builder: (ctx) => SafeArea(
+                            child: ListView(
+                              shrinkWrap: true,
+                              children: [
+                                ListTile(
+                                  title: const Text('All groups'),
+                                  onTap: () => Navigator.pop(ctx, -1),
+                                ),
+                                ..._groups.map(
+                                  (g) => ListTile(
+                                    title: Text(g.name),
+                                    onTap: () => Navigator.pop(ctx, g.id),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          Text(
-                            '${e.groupName} · ${e.paidBy} · ${e.date}',
-                            style: GoogleFonts.manrope(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
+                        );
+                        if (selected == null) return;
+                        setState(() => _groupId = selected == -1 ? null : selected);
+                        _load();
+                      },
                     ),
-                    MoneyText(e.amount, positive: false, size: 16),
+                    ActionChip(
+                      label: Text(_from == null ? 'From date' : 'From $_fromStr'),
+                      onPressed: _pickFrom,
+                    ),
+                    ActionChip(
+                      label: Text(_to == null ? 'To date' : 'To $_toStr'),
+                      onPressed: _pickTo,
+                    ),
+                    if (_from != null || _to != null || _groupId != null)
+                      ActionChip(
+                        label: const Text('Clear'),
+                        onPressed: () {
+                          setState(() {
+                            _from = null;
+                            _to = null;
+                            if (widget.initialGroupId == null) _groupId = null;
+                          });
+                          _load();
+                        },
+                      ),
                   ],
                 ),
-              );
-            }),
-            const SizedBox(height: 80),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class CreateExpenseScreen extends StatefulWidget {
-  const CreateExpenseScreen({super.key});
-
-  @override
-  State<CreateExpenseScreen> createState() => _CreateExpenseScreenState();
-}
-
-class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
-  final _title = TextEditingController();
-  final _amount = TextEditingController();
-  String _split = 'equal';
-
-  @override
-  void dispose() {
-    _title.dispose();
-    _amount.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.canvas,
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.only(bottom: 32),
-          children: [
-            AppHeader(
-              title: 'Add expense',
-              onBack: () => Navigator.pop(context),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  AuthTextField(
-                    controller: _title,
-                    label: 'Title',
-                    hint: 'Dinner at Nobu',
+              ),
+              if (_loading && _items.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(top: 80),
+                  child: Center(
+                    child: CircularProgressIndicator(color: AppColors.mint),
                   ),
-                  const SizedBox(height: 14),
-                  AuthTextField(
-                    controller: _amount,
-                    label: 'Amount',
-                    hint: '120.00',
-                    keyboardType: TextInputType.number,
-                  ),
-                  const SizedBox(height: 18),
-                  Text(
-                    'Split method',
-                    style: GoogleFonts.manrope(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      color: AppColors.forestSoft,
+                )
+              else if (_items.isEmpty)
+                const EmptyHint(message: 'No expenses match these filters')
+              else
+                ..._items.map(
+                  (e) => SoftTile(
+                    onTap: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ExpenseDetailScreen(expenseId: e.id),
+                        ),
+                      );
+                      _load();
+                    },
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: AppColors.mintWash,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.shopping_bag_outlined,
+                            color: AppColors.mint,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                e.title,
+                                style: GoogleFonts.manrope(
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.forest,
+                                ),
+                              ),
+                              Text(
+                                '${e.groupName ?? 'Group'} · ${e.paidByLabel} · ${e.expenseDate}',
+                                style: GoogleFonts.manrope(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        MoneyText(e.amount, positive: false, size: 16),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    children: ['equal', 'percentage', 'shares', 'custom', 'itemized']
-                        .map((m) {
-                      return ChoiceChip(
-                        label: Text(m),
-                        selected: _split == m,
-                        onSelected: (_) => setState(() => _split = m),
-                        selectedColor: AppColors.mintWash,
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 28),
-                  AuthPrimaryButton(
-                    label: 'Save expense',
-                    onPressed: () {
-                      showStaticSnack(context, 'Expense saved (static)');
-                      Navigator.pop(context);
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class ExpenseDetailScreen extends StatelessWidget {
-  const ExpenseDetailScreen({super.key, required this.expense});
-
-  final MockExpense expense;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.canvas,
-      body: SafeArea(
-        child: ListView(
-          children: [
-            AppHeader(
-              title: expense.title,
-              subtitle: expense.groupName,
-              onBack: () => Navigator.pop(context),
-            ),
-            SoftTile(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  MoneyText(expense.amount, positive: false, size: 32),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Paid by ${expense.paidBy} · ${expense.date}',
-                    style: GoogleFonts.manrope(color: AppColors.textSecondary),
-                  ),
-                  const SizedBox(height: 8),
-                  StatusChip(expense.category),
-                ],
-              ),
-            ),
-            const SectionLabel('Split (equal)'),
-            SoftTile(
-              child: Column(
-                children: ['Alex', 'Sam', 'Maya']
-                    .map(
-                      (n) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 16,
-                              backgroundColor: AppColors.mintWash,
-                              child: Text(n[0]),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(child: Text(n)),
-                            MoneyText(
-                              expense.amount / 3,
-                              positive: false,
-                              size: 14,
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
-            ),
-          ],
+                ),
+              const SizedBox(height: 80),
+            ],
+          ),
         ),
       ),
     );

@@ -6,6 +6,7 @@ import '../core/network/api_exception.dart';
 import '../core/storage/token_storage.dart';
 import '../models/user_model.dart';
 import 'auth_api.dart';
+import 'expenses_api.dart';
 import 'groups_api.dart';
 import 'user_api.dart';
 
@@ -25,10 +26,12 @@ class AuthController extends ChangeNotifier {
   late final AuthApi _api = AuthApi(_client);
   late final UserApi _userApi = UserApi(_client);
   late final GroupsApi _groupsApi = GroupsApi(_client);
+  late final ExpensesApi _expensesApi = ExpensesApi(_client);
 
   AuthApi get api => _api;
   UserApi get userApi => _userApi;
   GroupsApi get groupsApi => _groupsApi;
+  ExpensesApi get expensesApi => _expensesApi;
   ApiClient get client => _client;
 
   UserModel? _user;
