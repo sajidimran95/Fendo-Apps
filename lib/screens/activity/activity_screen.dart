@@ -1,23 +1,74 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../../data/mock_data.dart';
+import '../../core/network/api_exception.dart';
+import '../../models/activity_model.dart';
+import '../../services/activity_controller.dart';
 import '../../theme/app_colors.dart';
+import '../../utils/api_feedback.dart';
 import '../../widgets/common/app_widgets.dart';
+import 'activity_tile.dart';
 
-class ActivityScreen extends StatelessWidget {
+class ActivityScreen extends StatefulWidget {
   const ActivityScreen({super.key});
 
-  IconData _icon(String type) {
-    switch (type) {
-      case 'settlement_recorded':
-        return Icons.handshake_outlined;
-      case 'member_joined':
-        return Icons.person_add_alt_1_outlined;
-      case 'bill_created':
-        return Icons.receipt_long_outlined;
-      default:
-        return Icons.payments_outlined;
+  @override
+  State<ActivityScreen> createState() => _ActivityScreenState();
+}
+
+class _ActivityScreenState extends State<ActivityScreen> {
+  final _scroll = ScrollController();
+  List<ActivityItem> _items = const [];
+  bool _loading = true;
+  bool _loadingMore = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _scroll.removeListener(_onScroll);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scroll.hasClients || _loadingMore || _loading) return;
+    if (!ActivityController.instance.hasMore) return;
+    if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 160) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final items = await ActivityController.instance.loadActivity();
+      if (!mounted) return;
+      setState(() => _items = items);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      showApiError(context, e);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadMore() async {
+    setState(() => _loadingMore = true);
+    try {
+      final items = await ActivityController.instance.loadMore();
+      if (!mounted) return;
+      setState(() => _items = items);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      showApiError(context, e);
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
     }
   }
 
@@ -26,57 +77,75 @@ class ActivityScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.canvas,
       body: SafeArea(
-        child: ListView(
-          children: [
-            const AppHeader(
-              title: 'Activity',
-              subtitle: 'Everything happening across groups',
-            ),
-            ...MockData.activity.map((a) {
-              return SoftTile(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: AppColors.mintWash,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(_icon(a.eventType), color: AppColors.mint),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            a.description,
-                            style: GoogleFonts.manrope(
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.forest,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${a.groupName ?? 'Fendo'} · ${a.timeAgo}',
-                            style: GoogleFonts.manrope(
-                              fontSize: 12,
-                              color: AppColors.textMuted,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (a.amount != null)
-                      MoneyText(a.amount!, positive: null, size: 14),
-                  ],
+        child: RefreshIndicator(
+          color: AppColors.mint,
+          onRefresh: _load,
+          child: CustomScrollView(
+            controller: _scroll,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              const SliverToBoxAdapter(
+                child: AppHeader(
+                  title: 'Activity',
+                  subtitle: 'Everything happening across groups',
                 ),
-              );
-            }),
-            const SizedBox(height: 24),
-          ],
+              ),
+              if (_loading && _items.isEmpty)
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(
+                    child: CircularProgressIndicator(color: AppColors.mint),
+                  ),
+                )
+              else if (_items.isEmpty)
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: EmptyHint(message: 'No activity yet'),
+                )
+              else ...[
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, i) => ActivityTile(item: _items[i]),
+                    childCount: _items.length,
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+                    child: _loadingMore
+                        ? const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(12),
+                              child: CircularProgressIndicator(
+                                color: AppColors.mint,
+                                strokeWidth: 2,
+                              ),
+                            ),
+                          )
+                        : ActivityController.instance.hasMore
+                            ? TextButton(
+                                onPressed: _loadMore,
+                                child: Text(
+                                  'Load more',
+                                  style: GoogleFonts.manrope(
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.mint,
+                                  ),
+                                ),
+                              )
+                            : Text(
+                                'You’re all caught up',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.manrope(
+                                  color: AppColors.textMuted,
+                                  fontSize: 13,
+                                ),
+                              ),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );

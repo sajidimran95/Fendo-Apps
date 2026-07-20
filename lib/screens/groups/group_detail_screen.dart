@@ -13,6 +13,7 @@ import 'edit_group_screen.dart';
 import 'group_balances_screen.dart';
 import 'group_invite_screen.dart';
 import 'group_members_screen.dart';
+import '../activity/group_activity_screen.dart';
 
 class GroupDetailScreen extends StatefulWidget {
   const GroupDetailScreen({super.key, required this.groupId});
@@ -320,6 +321,35 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                                 '${g.memberCount}',
                                 style: GoogleFonts.manrope(
                                   color: AppColors.textSecondary,
+                                ),
+                              ),
+                              const Icon(Icons.chevron_right_rounded),
+                            ],
+                          ),
+                        ),
+                        SoftTile(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => GroupActivityScreen(
+                                  groupId: g.id,
+                                  groupName: g.name,
+                                ),
+                              ),
+                            );
+                          },
+                          child: Row(
+                            children: [
+                              const Icon(Icons.timeline_rounded),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Activity',
+                                  style: GoogleFonts.manrope(
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.forest,
+                                  ),
                                 ),
                               ),
                               const Icon(Icons.chevron_right_rounded),
