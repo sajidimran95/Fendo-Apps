@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../data/mock_data.dart';
+import '../../services/notifications_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/common/app_widgets.dart';
 import '../balances/balances_screen.dart';
@@ -10,8 +11,28 @@ import '../expenses/expenses_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../settlements/settlements_screen.dart';
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationsController.instance.loadUnreadCount();
+    });
+  }
+
+  Future<void> _openNotifications() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+    );
+    await NotificationsController.instance.loadUnreadCount();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,20 +73,21 @@ class DashboardScreen extends StatelessWidget {
                         ],
                       ),
                     ),
-                    IconButton(
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const NotificationsScreen(),
+                    ListenableBuilder(
+                      listenable: NotificationsController.instance,
+                      builder: (context, _) {
+                        final count =
+                            NotificationsController.instance.unreadCount;
+                        return IconButton(
+                          onPressed: _openNotifications,
+                          icon: Badge(
+                            isLabelVisible: count > 0,
+                            label: Text('$count'),
+                            child: const Icon(Icons.notifications_outlined),
                           ),
+                          color: AppColors.forest,
                         );
                       },
-                      icon: Badge(
-                        isLabelVisible: MockData.unreadCount > 0,
-                        label: Text('${MockData.unreadCount}'),
-                        child: const Icon(Icons.notifications_outlined),
-                      ),
-                      color: AppColors.forest,
                     ),
                   ],
                 ),
