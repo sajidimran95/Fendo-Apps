@@ -23,6 +23,14 @@ class GroupsController extends ChangeNotifier {
 
   List<GroupModel> get groups => List.unmodifiable(_groups);
 
+  GroupModel? groupById(int? id) {
+    if (id == null) return null;
+    for (final g in _groups) {
+      if (g.id == id) return g;
+    }
+    return null;
+  }
+
   void _seedDemoIfNeeded() {
     if (_groups.isNotEmpty) return;
     _groups.addAll([

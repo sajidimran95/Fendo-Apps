@@ -5,6 +5,7 @@ import '../../data/mock_data.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/common/app_widgets.dart';
 import '../balances/balances_screen.dart';
+import '../expenses/create_expense_screen.dart';
 import '../expenses/expenses_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../settlements/settlements_screen.dart';
@@ -130,7 +131,7 @@ class DashboardScreen extends StatelessWidget {
                         onTap: () {
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (_) => const ExpensesScreen(),
+                              builder: (_) => const CreateExpenseScreen(),
                             ),
                           );
                         },

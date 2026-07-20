@@ -28,13 +28,12 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   final _title = TextEditingController();
   final _amount = TextEditingController();
   final _currency = TextEditingController(text: 'USD');
-  final _merchant = TextEditingController();
   final _categoryId = TextEditingController();
   DateTime _date = DateTime.now();
   String _split = 'equal';
-  bool _multiPayer = false;
   bool _loading = false;
   bool _scanning = false;
+  bool _booting = true;
 
   List<GroupModel> _groups = const [];
   GroupModel? _group;
@@ -61,19 +60,21 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   }
 
   Future<void> _bootstrap() async {
-    await GroupsController.instance.loadGroups();
-    if (!mounted) return;
-    final groups = GroupsController.instance.groups;
-    setState(() {
-      _groups = groups;
-      if (groups.isNotEmpty) {
-        _group = groups.firstWhere(
-          (g) => g.id == widget.initialGroupId,
-          orElse: () => groups.first,
-        );
-      }
-    });
-    if (_group != null) await _loadMembers(_group!.id);
+    setState(() => _booting = true);
+    try {
+      await GroupsController.instance.loadGroups();
+      if (!mounted) return;
+      final groups = GroupsController.instance.groups;
+      final selected = GroupsController.instance.groupById(widget.initialGroupId) ??
+          (groups.isNotEmpty ? groups.first : null);
+      setState(() {
+        _groups = groups;
+        _group = selected;
+      });
+      if (selected != null) await _loadMembers(selected.id);
+    } finally {
+      if (mounted) setState(() => _booting = false);
+    }
   }
 
   Future<void> _loadMembers(int groupId) async {
@@ -116,7 +117,6 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
     _title.dispose();
     _amount.dispose();
     _currency.dispose();
-    _merchant.dispose();
     _categoryId.dispose();
     for (final c in _pct.values) {
       c.dispose();
@@ -171,9 +171,6 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
         if (scanned.title != null) _title.text = scanned.title!;
         if (scanned.amount != null) {
           _amount.text = scanned.amount!.toStringAsFixed(2);
-        }
-        if (scanned.merchantName != null) {
-          _merchant.text = scanned.merchantName!;
         }
         if (scanned.currency != null) _currency.text = scanned.currency!;
         if (scanned.expenseDate != null) {
@@ -257,22 +254,8 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   }
 
   List<ExpensePayer> _buildPayers(double amount) {
-    final me = AuthController.instance.user?.id ??
-        (_members.isNotEmpty ? _members.first.userId : 1);
-    if (!_multiPayer) {
-      final payer = _members.cast<GroupMember?>().firstWhere(
-            (m) => m?.userId == me,
-            orElse: () => _members.isNotEmpty ? _members.first : null,
-          );
-      return [
-        ExpensePayer(
-          userId: payer?.userId ?? me,
-          amountPaid: amount,
-          name: payer?.name ?? 'You',
-        ),
-      ];
-    }
-    return _members
+    final fromPaid = _members
+        .where((m) => _selectedParticipants.contains(m.userId))
         .where((m) {
           final v = double.tryParse(_payerAmt[m.userId]?.text ?? '') ?? 0;
           return v > 0;
@@ -285,6 +268,23 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
           ),
         )
         .toList();
+
+    if (fromPaid.isNotEmpty) return fromPaid;
+
+    // Default: current user paid the full amount (API still needs payers[]).
+    final me = AuthController.instance.user?.id ??
+        (_members.isNotEmpty ? _members.first.userId : 1);
+    final payer = _members.cast<GroupMember?>().firstWhere(
+          (m) => m?.userId == me,
+          orElse: () => _members.isNotEmpty ? _members.first : null,
+        );
+    return [
+      ExpensePayer(
+        userId: payer?.userId ?? me,
+        amountPaid: amount,
+        name: payer?.name ?? 'You',
+      ),
+    ];
   }
 
   Future<void> _save() async {
@@ -337,13 +337,11 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
         groupId: _group!.id,
         groupName: _group!.name,
         categoryId: int.tryParse(_categoryId.text.trim()),
-        categoryName: null,
         splitMethod: _split,
         payers: payers,
         participants: participants,
         items: items,
-        isMultiPayer: _multiPayer,
-        merchantName: _merchant.text.trim().isEmpty ? null : _merchant.text.trim(),
+        isMultiPayer: payers.length > 1,
       );
       if (!mounted) return;
       showApiMessage(context, 'Expense saved');
@@ -358,6 +356,15 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_booting) {
+      return const Scaffold(
+        backgroundColor: AppColors.canvas,
+        body: Center(
+          child: CircularProgressIndicator(color: AppColors.mint),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppColors.canvas,
       body: SafeArea(
@@ -386,7 +393,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Group',
+                    'Group *',
                     style: GoogleFonts.manrope(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
@@ -394,25 +401,33 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  DropdownButtonFormField<int>(
-                    // ignore: deprecated_member_use
-                    value: _group?.id,
-                    items: _groups
-                        .map(
-                          (g) => DropdownMenuItem(
-                            value: g.id,
-                            child: Text(g.name),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (id) async {
-                      if (id == null) return;
-                      final g = _groups.firstWhere((e) => e.id == id);
-                      setState(() => _group = g);
-                      await _loadMembers(id);
-                    },
-                    decoration: const InputDecoration(),
-                  ),
+                  if (_groups.isEmpty)
+                    Text(
+                      'No groups yet. Create a group first.',
+                      style: GoogleFonts.manrope(color: AppColors.coral),
+                    )
+                  else
+                    DropdownButtonFormField<int>(
+                      key: ValueKey('group-${_group?.id}'),
+                      initialValue: _group?.id,
+                      items: _groups
+                          .map(
+                            (g) => DropdownMenuItem(
+                              value: g.id,
+                              child: Text(g.name),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (id) async {
+                        if (id == null) return;
+                        final g = _groups.firstWhere((e) => e.id == id);
+                        setState(() => _group = g);
+                        await _loadMembers(id);
+                      },
+                      decoration: const InputDecoration(
+                        hintText: 'Required',
+                      ),
+                    ),
                   const SizedBox(height: 14),
                   AuthTextField(
                     controller: _title,
@@ -435,15 +450,9 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                   ),
                   const SizedBox(height: 14),
                   AuthTextField(
-                    controller: _merchant,
-                    label: 'Merchant (optional)',
-                    hint: 'Nobu',
-                  ),
-                  const SizedBox(height: 14),
-                  AuthTextField(
                     controller: _categoryId,
-                    label: 'Category ID (optional)',
-                    hint: '1',
+                    label: 'Category ID',
+                    hint: 'optional',
                     keyboardType: TextInputType.number,
                   ),
                   const SizedBox(height: 14),
@@ -464,16 +473,6 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                       );
                       if (d != null) setState(() => _date = d);
                     },
-                  ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      'Multi-payer',
-                      style: GoogleFonts.manrope(fontWeight: FontWeight.w700),
-                    ),
-                    value: _multiPayer,
-                    activeThumbColor: AppColors.mint,
-                    onChanged: (v) => setState(() => _multiPayer = v),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -498,93 +497,87 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                     }).toList(),
                   ),
                   const SizedBox(height: 16),
-                  if (_multiPayer) ...[
-                    const SectionLabel('Payers'),
-                    ..._members.map(
-                      (m) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: AuthTextField(
-                          controller: _payerAmt[m.userId]!,
-                          label: '${m.name} paid',
-                          hint: '0.00',
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
                   if (_split != 'itemized') ...[
                     const SectionLabel('Participants'),
-                    ..._members.map(
-                      (m) => CheckboxListTile(
-                        contentPadding: EdgeInsets.zero,
-                        value: _selectedParticipants.contains(m.userId),
-                        title: Text(m.name),
-                        activeColor: AppColors.mint,
-                        onChanged: (v) {
-                          setState(() {
-                            if (v == true) {
-                              _selectedParticipants.add(m.userId);
-                            } else {
-                              _selectedParticipants.remove(m.userId);
-                            }
-                          });
-                        },
-                      ),
-                    ),
+                    ..._members.map((m) {
+                      final active =
+                          _selectedParticipants.contains(m.userId);
+                      return SoftTile(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 0,
+                          vertical: 6,
+                        ),
+                        child: Column(
+                          children: [
+                            CheckboxListTile(
+                              contentPadding: EdgeInsets.zero,
+                              value: active,
+                              title: Text(m.name),
+                              subtitle: Text(m.email),
+                              activeColor: AppColors.mint,
+                              onChanged: (v) {
+                                setState(() {
+                                  if (v == true) {
+                                    _selectedParticipants.add(m.userId);
+                                  } else {
+                                    _selectedParticipants.remove(m.userId);
+                                    _payerAmt[m.userId]?.clear();
+                                  }
+                                });
+                              },
+                            ),
+                            if (active) ...[
+                              AuthTextField(
+                                controller: _payerAmt[m.userId]!,
+                                label: 'Paid (amount_paid)',
+                                hint: '0.00 if they did not pay',
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                  decimal: true,
+                                ),
+                              ),
+                              if (_split == 'percentage') ...[
+                                const SizedBox(height: 10),
+                                AuthTextField(
+                                  controller: _pct[m.userId]!,
+                                  label: 'Percentage',
+                                  hint: '33.33',
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                ),
+                              ],
+                              if (_split == 'shares') ...[
+                                const SizedBox(height: 10),
+                                AuthTextField(
+                                  controller: _shares[m.userId]!,
+                                  label: 'Shares',
+                                  hint: '1',
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                ),
+                              ],
+                              if (_split == 'custom') ...[
+                                const SizedBox(height: 10),
+                                AuthTextField(
+                                  controller: _customAmt[m.userId]!,
+                                  label: 'Share amount',
+                                  hint: '0.00',
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ],
+                        ),
+                      );
+                    }),
                   ],
-                  if (_split == 'percentage')
-                    ..._members
-                        .where((m) => _selectedParticipants.contains(m.userId))
-                        .map(
-                          (m) => Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: AuthTextField(
-                              controller: _pct[m.userId]!,
-                              label: '${m.name} %',
-                              hint: '33.33',
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                decimal: true,
-                              ),
-                            ),
-                          ),
-                        ),
-                  if (_split == 'shares')
-                    ..._members
-                        .where((m) => _selectedParticipants.contains(m.userId))
-                        .map(
-                          (m) => Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: AuthTextField(
-                              controller: _shares[m.userId]!,
-                              label: '${m.name} shares',
-                              hint: '1',
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                decimal: true,
-                              ),
-                            ),
-                          ),
-                        ),
-                  if (_split == 'custom')
-                    ..._members
-                        .where((m) => _selectedParticipants.contains(m.userId))
-                        .map(
-                          (m) => Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: AuthTextField(
-                              controller: _customAmt[m.userId]!,
-                              label: '${m.name} amount',
-                              hint: '0.00',
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                decimal: true,
-                              ),
-                            ),
-                          ),
-                        ),
                   if (_split == 'itemized') ...[
                     SectionLabel(
                       'Items',
