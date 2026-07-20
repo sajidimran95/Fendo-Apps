@@ -10,6 +10,7 @@ import 'balances_api.dart';
 import 'bills_api.dart';
 import 'expenses_api.dart';
 import 'groups_api.dart';
+import 'settlements_api.dart';
 import 'user_api.dart';
 
 /// App-wide auth session: token + current user.
@@ -31,6 +32,7 @@ class AuthController extends ChangeNotifier {
   late final ExpensesApi _expensesApi = ExpensesApi(_client);
   late final BalancesApi _balancesApi = BalancesApi(_client);
   late final BillsApi _billsApi = BillsApi(_client);
+  late final SettlementsApi _settlementsApi = SettlementsApi(_client);
 
   AuthApi get api => _api;
   UserApi get userApi => _userApi;
@@ -38,6 +40,7 @@ class AuthController extends ChangeNotifier {
   ExpensesApi get expensesApi => _expensesApi;
   BalancesApi get balancesApi => _balancesApi;
   BillsApi get billsApi => _billsApi;
+  SettlementsApi get settlementsApi => _settlementsApi;
   ApiClient get client => _client;
 
   UserModel? _user;
