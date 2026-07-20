@@ -9,11 +9,12 @@ import '../../services/groups_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
 import '../../widgets/common/app_widgets.dart';
+import '../activity/group_activity_screen.dart';
+import '../reports/group_report_screen.dart';
 import 'edit_group_screen.dart';
 import 'group_balances_screen.dart';
 import 'group_invite_screen.dart';
 import 'group_members_screen.dart';
-import '../activity/group_activity_screen.dart';
 
 class GroupDetailScreen extends StatefulWidget {
   const GroupDetailScreen({super.key, required this.groupId});
@@ -346,6 +347,34 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                               Expanded(
                                 child: Text(
                                   'Activity',
+                                  style: GoogleFonts.manrope(
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.forest,
+                                  ),
+                                ),
+                              ),
+                              const Icon(Icons.chevron_right_rounded),
+                            ],
+                          ),
+                        ),
+                        SoftTile(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => GroupReportScreen(
+                                  initialGroupId: g.id,
+                                ),
+                              ),
+                            );
+                          },
+                          child: Row(
+                            children: [
+                              const Icon(Icons.insights_outlined),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Report',
                                   style: GoogleFonts.manrope(
                                     fontWeight: FontWeight.w700,
                                     color: AppColors.forest,

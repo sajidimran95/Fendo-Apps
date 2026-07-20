@@ -12,6 +12,7 @@ import 'bills_api.dart';
 import 'expenses_api.dart';
 import 'groups_api.dart';
 import 'notifications_api.dart';
+import 'reports_api.dart';
 import 'settlements_api.dart';
 import 'user_api.dart';
 
@@ -37,6 +38,7 @@ class AuthController extends ChangeNotifier {
   late final SettlementsApi _settlementsApi = SettlementsApi(_client);
   late final ActivityApi _activityApi = ActivityApi(_client);
   late final NotificationsApi _notificationsApi = NotificationsApi(_client);
+  late final ReportsApi _reportsApi = ReportsApi(_client);
 
   AuthApi get api => _api;
   UserApi get userApi => _userApi;
@@ -47,6 +49,7 @@ class AuthController extends ChangeNotifier {
   SettlementsApi get settlementsApi => _settlementsApi;
   ActivityApi get activityApi => _activityApi;
   NotificationsApi get notificationsApi => _notificationsApi;
+  ReportsApi get reportsApi => _reportsApi;
   ApiClient get client => _client;
 
   UserModel? _user;
