@@ -10,21 +10,30 @@ class FendoMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        gradient: AppColors.brandMark,
-        borderRadius: BorderRadius.circular(size * 0.28),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        'F',
-        style: GoogleFonts.sora(
-          fontSize: size * 0.48,
-          fontWeight: FontWeight.w800,
-          color: Colors.white,
-          height: 1,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(size * 0.28),
+      child: Image.asset(
+        'assets/brand/fendo_icon.png',
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            gradient: AppColors.brandMark,
+            borderRadius: BorderRadius.circular(size * 0.28),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            'F',
+            style: GoogleFonts.sora(
+              fontSize: size * 0.48,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+              height: 1,
+            ),
+          ),
         ),
       ),
     );
