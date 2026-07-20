@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/network/api_exception.dart';
 import '../../navigation/app_nav.dart';
+import '../../services/auth_controller.dart';
 import '../../theme/app_colors.dart';
+import '../../utils/api_feedback.dart';
 import '../../widgets/auth/auth_background.dart';
 import '../../widgets/auth/auth_widgets.dart';
 import 'reset_password_screen.dart';
@@ -66,26 +69,51 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
     super.dispose();
   }
 
+  String get _otpCode => _digits.map((c) => c.text).join();
+
   Future<void> _onVerify() async {
-    // Static: any / empty OTP continues
-    setState(() => _loading = true);
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    if (!mounted) return;
-    setState(() => _loading = false);
+    final otp = _otpCode;
+    if (otp.length < 6) {
+      showApiError(context, ApiException(message: 'Enter the 6-digit code'));
+      return;
+    }
 
     if (widget.purpose == OtpPurpose.resetPassword) {
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => ResetPasswordScreen(email: widget.email),
+          builder: (_) => ResetPasswordScreen(
+            email: widget.email,
+            otp: otp,
+          ),
         ),
       );
-    } else {
-      goToHome(context);
+      return;
     }
+
+    // Register verify stays local until register API is wired.
+    setState(() => _loading = true);
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+    setState(() => _loading = false);
+    goToHome(context);
   }
 
-  void _onResend() {
+  Future<void> _onResend() async {
     if (_resendSeconds > 0) return;
+
+    if (widget.purpose == OtpPurpose.resetPassword) {
+      try {
+        await AuthController.instance.api.forgotPassword(email: widget.email);
+        if (!mounted) return;
+        showApiMessage(context, 'Code resent');
+        _startResendTimer();
+      } on ApiException catch (e) {
+        if (!mounted) return;
+        showApiError(context, e);
+      }
+      return;
+    }
+
     _startResendTimer();
   }
 
@@ -142,7 +170,9 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
                   begin: 0.18,
                   end: 0.65,
                   child: Text(
-                    'Enter any 6 digits (or tap Verify) to $purposeLabel — static preview.',
+                    widget.purpose == OtpPurpose.resetPassword
+                        ? 'Enter the 6-digit code we sent to ${widget.email}.'
+                        : 'Enter any 6 digits (or tap Verify) to $purposeLabel — static preview.',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),

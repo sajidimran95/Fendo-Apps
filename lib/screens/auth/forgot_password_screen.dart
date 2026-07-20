@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/network/api_exception.dart';
+import '../../services/auth_controller.dart';
 import '../../theme/app_colors.dart';
+import '../../utils/api_feedback.dart';
 import '../../widgets/auth/auth_background.dart';
 import '../../widgets/auth/auth_widgets.dart';
 import 'otp_verify_screen.dart';
@@ -36,23 +39,37 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
   }
 
   Future<void> _onSubmit() async {
+    final email = _emailCtrl.text.trim();
+    if (email.isEmpty) {
+      showApiError(context, ApiException(message: 'Enter your email'));
+      return;
+    }
+
     setState(() => _loading = true);
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    if (!mounted) return;
-    setState(() => _loading = false);
-
-    final email = _emailCtrl.text.trim().isEmpty
-        ? 'user@fendo.app'
-        : _emailCtrl.text.trim();
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => OtpVerifyScreen(
-          email: email,
-          purpose: OtpPurpose.resetPassword,
+    try {
+      final msg = await AuthController.instance.api.forgotPassword(email: email);
+      if (!mounted) return;
+      showApiMessage(
+        context,
+        msg ?? 'If that email exists, a reset code was sent.',
+      );
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => OtpVerifyScreen(
+            email: email,
+            purpose: OtpPurpose.resetPassword,
+          ),
         ),
-      ),
-    );
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      showApiError(context, e);
+    } catch (e) {
+      if (!mounted) return;
+      showApiError(context, e);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
@@ -104,7 +121,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
                   begin: 0.2,
                   end: 0.65,
                   child: Text(
-                    'Enter any email to continue (static).',
+                    'We’ll email a one-time code to reset your password.',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
@@ -116,7 +133,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
                   child: AuthTextField(
                     controller: _emailCtrl,
                     label: 'Email',
-                    hint: 'any@email.com',
+                    hint: 'you@email.com',
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.done,
                     prefixIcon: Icons.mail_outline_rounded,

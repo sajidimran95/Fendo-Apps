@@ -1,15 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/network/api_exception.dart';
+import '../../services/auth_controller.dart';
 import '../../theme/app_colors.dart';
+import '../../utils/api_feedback.dart';
 import '../../widgets/auth/auth_background.dart';
 import '../../widgets/auth/auth_widgets.dart';
 import 'login_screen.dart';
 
 class ResetPasswordScreen extends StatefulWidget {
-  const ResetPasswordScreen({super.key, required this.email});
+  const ResetPasswordScreen({
+    super.key,
+    required this.email,
+    required this.otp,
+  });
 
   final String email;
+  final String otp;
 
   @override
   State<ResetPasswordScreen> createState() => _ResetPasswordScreenState();
@@ -29,15 +37,41 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   }
 
   Future<void> _onSubmit() async {
-    setState(() => _loading = true);
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    if (!mounted) return;
-    setState(() => _loading = false);
+    final password = _passwordCtrl.text;
+    final confirm = _confirmCtrl.text;
 
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (_) => false,
-    );
+    if (password.isEmpty || confirm.isEmpty) {
+      showApiError(context, ApiException(message: 'Enter and confirm password'));
+      return;
+    }
+    if (password != confirm) {
+      showApiError(context, ApiException(message: 'Passwords do not match'));
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      final msg = await AuthController.instance.api.resetPassword(
+        email: widget.email,
+        otp: widget.otp,
+        password: password,
+        passwordConfirmation: confirm,
+      );
+      if (!mounted) return;
+      showApiMessage(context, msg ?? 'Password updated. Sign in.');
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (_) => false,
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      showApiError(context, e);
+    } catch (e) {
+      if (!mounted) return;
+      showApiError(context, e);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
@@ -75,14 +109,14 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'For ${widget.email} — static preview, any password works.',
+                  'Choose a new password for ${widget.email}.',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 28),
                 AuthTextField(
                   controller: _passwordCtrl,
                   label: 'New password',
-                  hint: 'anything',
+                  hint: 'New password',
                   obscureText: _obscure,
                   prefixIcon: Icons.lock_outline_rounded,
                   suffix: IconButton(
@@ -99,7 +133,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 AuthTextField(
                   controller: _confirmCtrl,
                   label: 'Confirm password',
-                  hint: 'anything',
+                  hint: 'Confirm password',
                   obscureText: true,
                   prefixIcon: Icons.lock_outline_rounded,
                 ),

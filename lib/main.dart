@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'screens/auth/login_screen.dart';
+import 'navigation/auth_gate.dart';
+import 'services/auth_controller.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -15,6 +16,7 @@ void main() {
       systemNavigationBarIconBrightness: Brightness.dark,
     ),
   );
+  await AuthController.instance.bootstrap();
   runApp(const FendoApp());
 }
 
@@ -27,7 +29,7 @@ class FendoApp extends StatelessWidget {
       title: 'Fendo',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      home: const LoginScreen(),
+      home: const AuthGate(),
     );
   }
 }

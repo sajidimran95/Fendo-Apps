@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../data/mock_data.dart';
+import '../../services/auth_controller.dart';
 import '../../theme/app_colors.dart';
+import '../../utils/api_feedback.dart';
 import '../../widgets/auth/auth_widgets.dart';
 import '../../widgets/common/app_widgets.dart';
 import '../auth/login_screen.dart';
@@ -11,106 +13,132 @@ import '../reports/reports_screen.dart';
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
+  Future<void> _logout(BuildContext context) async {
+    try {
+      await AuthController.instance.logout();
+    } catch (e) {
+      if (context.mounted) showApiError(context, e);
+    }
+    if (!context.mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (_) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final u = MockData.currentUser;
+    return ListenableBuilder(
+      listenable: AuthController.instance,
+      builder: (context, _) {
+        final apiUser = AuthController.instance.user;
+        final name = apiUser?.name ?? MockData.currentUser.name;
+        final email = apiUser?.email ?? MockData.currentUser.email;
+        final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
 
-    return Scaffold(
-      backgroundColor: AppColors.canvas,
-      body: SafeArea(
-        child: ListView(
-          children: [
-            const AppHeader(title: 'Profile', subtitle: 'Account & settings'),
-            SoftTile(
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 30,
-                    backgroundColor: AppColors.mintWash,
-                    child: Text(
-                      u.name[0],
-                      style: GoogleFonts.sora(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.mint,
+        return Scaffold(
+          backgroundColor: AppColors.canvas,
+          body: SafeArea(
+            child: ListView(
+              children: [
+                const AppHeader(title: 'Profile', subtitle: 'Account & settings'),
+                SoftTile(
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 30,
+                        backgroundColor: AppColors.mintWash,
+                        backgroundImage: apiUser?.avatar != null &&
+                                apiUser!.avatar!.isNotEmpty
+                            ? NetworkImage(apiUser.avatar!)
+                            : null,
+                        child: apiUser?.avatar == null ||
+                                apiUser!.avatar!.isEmpty
+                            ? Text(
+                                initial,
+                                style: GoogleFonts.sora(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.mint,
+                                ),
+                              )
+                            : null,
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          u.name,
-                          style: GoogleFonts.sora(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.forest,
-                          ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              style: GoogleFonts.sora(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.forest,
+                              ),
+                            ),
+                            Text(
+                              email,
+                              style: GoogleFonts.manrope(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
                         ),
-                        Text(
-                          u.email,
-                          style: GoogleFonts.manrope(
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                      IconButton(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const EditProfileScreen(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.edit_outlined),
+                      ),
+                    ],
                   ),
-                  IconButton(
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const EditProfileScreen(),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.edit_outlined),
+                ),
+                _MenuTile(
+                  icon: Icons.bar_chart_rounded,
+                  label: 'Reports',
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const ReportsScreen()),
+                    );
+                  },
+                ),
+                _MenuTile(
+                  icon: Icons.lock_outline_rounded,
+                  label: 'Change password',
+                  onTap: () =>
+                      showStaticSnack(context, 'Change password (static)'),
+                ),
+                _MenuTile(
+                  icon: Icons.devices_rounded,
+                  label: 'Sessions',
+                  onTap: () => showStaticSnack(context, 'Sessions (static)'),
+                ),
+                _MenuTile(
+                  icon: Icons.notifications_outlined,
+                  label: 'Notification settings',
+                  onTap: () => showStaticSnack(
+                    context,
+                    'Notification settings (static)',
                   ),
-                ],
-              ),
+                ),
+                _MenuTile(
+                  icon: Icons.logout_rounded,
+                  label: 'Log out',
+                  danger: true,
+                  onTap: () => _logout(context),
+                ),
+                const SizedBox(height: 24),
+              ],
             ),
-            _MenuTile(
-              icon: Icons.bar_chart_rounded,
-              label: 'Reports',
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ReportsScreen()),
-                );
-              },
-            ),
-            _MenuTile(
-              icon: Icons.lock_outline_rounded,
-              label: 'Change password',
-              onTap: () => showStaticSnack(context, 'Change password (static)'),
-            ),
-            _MenuTile(
-              icon: Icons.devices_rounded,
-              label: 'Sessions',
-              onTap: () => showStaticSnack(context, 'Sessions (static)'),
-            ),
-            _MenuTile(
-              icon: Icons.notifications_outlined,
-              label: 'Notification settings',
-              onTap: () =>
-                  showStaticSnack(context, 'Notification settings (static)'),
-            ),
-            _MenuTile(
-              icon: Icons.logout_rounded,
-              label: 'Log out',
-              danger: true,
-              onTap: () {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                  (_) => false,
-                );
-              },
-            ),
-            const SizedBox(height: 24),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -168,10 +196,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   void initState() {
     super.initState();
+    final apiUser = AuthController.instance.user;
     final u = MockData.currentUser;
-    _name = TextEditingController(text: u.name);
-    _phone = TextEditingController(text: u.phone ?? '');
-    _currency = TextEditingController(text: u.currency);
+    _name = TextEditingController(text: apiUser?.name ?? u.name);
+    _phone = TextEditingController(text: apiUser?.phone ?? u.phone ?? '');
+    _currency = TextEditingController(text: apiUser?.currency ?? u.currency);
   }
 
   @override

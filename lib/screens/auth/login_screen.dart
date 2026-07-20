@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/network/api_exception.dart';
 import '../../navigation/app_nav.dart';
+import '../../services/auth_controller.dart';
 import '../../theme/app_colors.dart';
+import '../../utils/api_feedback.dart';
 import '../../widgets/auth/auth_background.dart';
 import '../../widgets/auth/auth_widgets.dart';
 import 'forgot_password_screen.dart';
@@ -42,20 +45,50 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _onLogin() async {
-    // Static: any id / password goes to home
+    final email = _emailCtrl.text.trim();
+    final password = _passwordCtrl.text;
+
+    if (email.isEmpty || password.isEmpty) {
+      showApiError(
+        context,
+        ApiException(message: 'Enter email and password'),
+      );
+      return;
+    }
+
     setState(() => _loading = true);
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    if (!mounted) return;
-    setState(() => _loading = false);
-    goToHome(context);
+    try {
+      await AuthController.instance.login(email: email, password: password);
+      if (!mounted) return;
+      goToHome(context);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      if (e.isForbidden) {
+        showApiError(
+          context,
+          ApiException(
+            message: e.displayMessage.isNotEmpty
+                ? e.displayMessage
+                : 'Email not verified. Check your inbox.',
+            statusCode: e.statusCode,
+          ),
+        );
+      } else {
+        showApiError(context, e);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      showApiError(context, e);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
-  void _socialLogin() async {
-    setState(() => _loading = true);
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    if (!mounted) return;
-    setState(() => _loading = false);
-    goToHome(context);
+  void _socialLogin(String provider) {
+    showApiMessage(
+      context,
+      '$provider sign-in API is ready — connect Google/Apple SDK next.',
+    );
   }
 
   @override
@@ -114,7 +147,7 @@ class _LoginScreenState extends State<LoginScreen>
                   begin: 0.18,
                   end: 0.55,
                   child: Text(
-                    'Static preview — any email & password works.',
+                    'Sign in with your Fendo account.',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
@@ -126,10 +159,11 @@ class _LoginScreenState extends State<LoginScreen>
                   child: AuthTextField(
                     controller: _emailCtrl,
                     label: 'Email',
-                    hint: 'any@email.com',
+                    hint: 'you@email.com',
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
                     prefixIcon: Icons.mail_outline_rounded,
+                    autofillHints: const [AutofillHints.email],
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -140,11 +174,12 @@ class _LoginScreenState extends State<LoginScreen>
                   child: AuthTextField(
                     controller: _passwordCtrl,
                     label: 'Password',
-                    hint: 'anything',
+                    hint: 'Your password',
                     obscureText: _obscure,
                     textInputAction: TextInputAction.done,
                     prefixIcon: Icons.lock_outline_rounded,
                     onFieldSubmitted: (_) => _onLogin(),
+                    autofillHints: const [AutofillHints.password],
                     suffix: IconButton(
                       onPressed: () => setState(() => _obscure = !_obscure),
                       icon: Icon(
@@ -199,8 +234,8 @@ class _LoginScreenState extends State<LoginScreen>
                   begin: 0.58,
                   end: 0.96,
                   child: AuthSocialRow(
-                    onGoogle: _socialLogin,
-                    onApple: _socialLogin,
+                    onGoogle: () => _socialLogin('Google'),
+                    onApple: () => _socialLogin('Apple'),
                   ),
                 ),
                 const SizedBox(height: 32),
