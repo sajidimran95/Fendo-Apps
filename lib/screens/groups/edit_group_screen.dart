@@ -2,25 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../models/group_model.dart';
 import '../../services/groups_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
 import '../../widgets/auth/auth_widgets.dart';
 import '../../widgets/common/app_widgets.dart';
 
-class CreateGroupScreen extends StatefulWidget {
-  const CreateGroupScreen({super.key});
+class EditGroupScreen extends StatefulWidget {
+  const EditGroupScreen({super.key, required this.group});
+
+  final GroupModel group;
 
   @override
-  State<CreateGroupScreen> createState() => _CreateGroupScreenState();
+  State<EditGroupScreen> createState() => _EditGroupScreenState();
 }
 
-class _CreateGroupScreenState extends State<CreateGroupScreen> {
-  final _name = TextEditingController();
-  final _currency = TextEditingController(text: 'USD');
-  final _emails = TextEditingController();
-  String _type = 'friends';
-  bool _simplify = true;
+class _EditGroupScreenState extends State<EditGroupScreen> {
+  late final TextEditingController _name;
+  late final TextEditingController _currency;
+  late String _type;
+  late bool _simplify;
   bool _loading = false;
 
   final _types = const [
@@ -34,41 +36,39 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _name = TextEditingController(text: widget.group.name);
+    _currency = TextEditingController(text: widget.group.currency);
+    _type = widget.group.type;
+    _simplify = widget.group.simplifyDebts;
+  }
+
+  @override
   void dispose() {
     _name.dispose();
     _currency.dispose();
-    _emails.dispose();
     super.dispose();
   }
 
-  List<String> get _parsedEmails => _emails.text
-      .split(RegExp(r'[,;\s]+'))
-      .map((e) => e.trim())
-      .where((e) => e.contains('@'))
-      .toList();
-
-  Future<void> _create() async {
+  Future<void> _save() async {
     if (_name.text.trim().isEmpty) {
-      showApiError(context, ApiException(message: 'Enter a group name'));
+      showApiError(context, ApiException(message: 'Name is required'));
       return;
     }
-
     setState(() => _loading = true);
     try {
-      await GroupsController.instance.createGroup(
+      await GroupsController.instance.updateGroup(
+        widget.group.id,
         name: _name.text.trim(),
         type: _type,
-        currency: _currency.text.trim().isEmpty ? 'USD' : _currency.text.trim(),
+        currency: _currency.text.trim(),
         simplifyDebts: _simplify,
-        memberEmails: _parsedEmails,
       );
       if (!mounted) return;
-      showApiMessage(context, 'Group created');
+      showApiMessage(context, 'Group updated');
       Navigator.pop(context);
     } on ApiException catch (e) {
-      if (!mounted) return;
-      showApiError(context, e);
-    } catch (e) {
       if (!mounted) return;
       showApiError(context, e);
     } finally {
@@ -85,7 +85,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
           padding: const EdgeInsets.only(bottom: 32),
           children: [
             AppHeader(
-              title: 'New group',
+              title: 'Edit group',
               onBack: () => Navigator.pop(context),
             ),
             Padding(
@@ -93,17 +93,9 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  AuthTextField(
-                    controller: _name,
-                    label: 'Group name',
-                    hint: 'Bali Trip 2026',
-                  ),
+                  AuthTextField(controller: _name, label: 'Group name'),
                   const SizedBox(height: 14),
-                  AuthTextField(
-                    controller: _currency,
-                    label: 'Currency',
-                    hint: 'USD',
-                  ),
+                  AuthTextField(controller: _currency, label: 'Currency'),
                   const SizedBox(height: 18),
                   Text(
                     'Type',
@@ -118,10 +110,9 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: _types.map((t) {
-                      final selected = t == _type;
                       return ChoiceChip(
                         label: Text(t),
-                        selected: selected,
+                        selected: t == _type,
                         onSelected: (_) => setState(() => _type = t),
                         selectedColor: AppColors.mintWash,
                         labelStyle: GoogleFonts.manrope(
@@ -131,36 +122,21 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       );
                     }).toList(),
                   ),
-                  const SizedBox(height: 18),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: Text(
                       'Simplify debts',
                       style: GoogleFonts.manrope(fontWeight: FontWeight.w700),
                     ),
-                    subtitle: Text(
-                      'Fewer payments to settle everyone',
-                      style: GoogleFonts.manrope(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
                     value: _simplify,
                     activeThumbColor: AppColors.mint,
                     onChanged: (v) => setState(() => _simplify = v),
                   ),
-                  const SizedBox(height: 8),
-                  AuthTextField(
-                    controller: _emails,
-                    label: 'Invite emails (optional)',
-                    hint: 'a@mail.com, b@mail.com',
-                    keyboardType: TextInputType.emailAddress,
-                  ),
                   const SizedBox(height: 24),
                   AuthPrimaryButton(
-                    label: 'Create group',
+                    label: 'Save changes',
                     loading: _loading,
-                    onPressed: _loading ? null : _create,
+                    onPressed: _loading ? null : _save,
                   ),
                 ],
               ),
