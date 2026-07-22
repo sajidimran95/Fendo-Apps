@@ -55,15 +55,58 @@ class UserApi {
   }
 
   /// 2.3 POST /user/avatar — multipart field `avatar`
+  ///
+  /// Response is often only `{ avatar: "avatars/..." }`, so merge into
+  /// [current] then refresh profile when possible.
   Future<UserModel> uploadAvatar({
     required String filePath,
     required String fileName,
+    UserModel? current,
   }) async {
     final form = FormData.fromMap({
       'avatar': await MultipartFile.fromFile(filePath, filename: fileName),
     });
     final res = await _client.postMultipart('/user/avatar', data: form);
-    return _parseUser(res.data);
+    final map = unwrapMap(res.data);
+    final avatarPath = (map['avatar'] ??
+            map['avatar_url'] ??
+            (map['user'] is Map ? (map['user'] as Map)['avatar'] : null))
+        ?.toString();
+
+    UserModel updated;
+    if (map['id'] != null || map['email'] != null || map['user'] is Map) {
+      updated = _parseUser(res.data);
+    } else if (current != null && avatarPath != null && avatarPath.isNotEmpty) {
+      updated = current.copyWith(avatar: avatarPath);
+    } else if (avatarPath != null && avatarPath.isNotEmpty) {
+      updated = UserModel(
+        id: current?.id ?? 0,
+        name: current?.name ?? '',
+        email: current?.email ?? '',
+        phone: current?.phone,
+        avatar: avatarPath,
+        currency: current?.currency ?? 'USD',
+        timezone: current?.timezone,
+        language: current?.language,
+        venmoHandle: current?.venmoHandle,
+        paypalEmail: current?.paypalEmail,
+        cashappTag: current?.cashappTag,
+        notificationSettings: current?.notificationSettings,
+      );
+    } else {
+      throw ApiException(message: 'Avatar upload returned no path');
+    }
+
+    // Prefer full profile so name/email stay intact and avatar is current.
+    try {
+      final fresh = await getProfile();
+      if (fresh.avatar == null || fresh.avatar!.isEmpty) {
+        return fresh.copyWith(avatar: updated.avatar);
+      }
+      return fresh;
+    } catch (_) {
+      return updated;
+    }
   }
 
   /// 2.4 PUT /user/password

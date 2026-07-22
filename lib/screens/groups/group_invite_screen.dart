@@ -39,6 +39,7 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
   @override
   void initState() {
     super.initState();
+    _emails.addListener(() => setState(() {}));
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadContacts());
   }
 
@@ -286,12 +287,6 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                       hint: 'a@mail.com, b@mail.com',
                       keyboardType: TextInputType.emailAddress,
                     ),
-                    const SizedBox(height: 16),
-                    AuthPrimaryButton(
-                      label: 'Send invites',
-                      loading: _sending,
-                      onPressed: _sending ? null : _sendInvites,
-                    ),
                     const SizedBox(height: 22),
                     Text(
                       'Invite link',
@@ -410,7 +405,8 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                           padding: const EdgeInsets.only(bottom: 10),
                           child: Text(
                             '${_selectedLocalIds.length} selected'
-                            '${_contactEmails.isNotEmpty ? ' · ${_contactEmails.length} with email' : ''}',
+                            '${_contactEmails.isNotEmpty ? ' · ${_contactEmails.length} email' : ''}'
+                            '${_contactPhones.isNotEmpty ? ' · ${_contactPhones.length} phone' : ''}',
                             style: GoogleFonts.manrope(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
@@ -431,9 +427,35 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                         );
                       }),
                     ],
+                    const SizedBox(height: 80),
                   ],
                 ),
               ),
+              if (_selectedLocalIds.isNotEmpty || _manualEmails.isNotEmpty)
+                SafeArea(
+                  top: false,
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.06),
+                          blurRadius: 12,
+                          offset: const Offset(0, -4),
+                        ),
+                      ],
+                    ),
+                    child: AuthPrimaryButton(
+                      label: _selectedLocalIds.isEmpty
+                          ? 'Invite ${_manualEmails.length} by email'
+                          : 'Add ${_selectedLocalIds.length} contact${_selectedLocalIds.length == 1 ? '' : 's'}',
+                      loading: _sending,
+                      onPressed: _sending ? null : _sendInvites,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),

@@ -1,3 +1,5 @@
+import '../utils/media_url.dart';
+
 class UserModel {
   const UserModel({
     required this.id,
@@ -27,13 +29,17 @@ class UserModel {
   final String? cashappTag;
   final Map<String, dynamic>? notificationSettings;
 
+  /// Absolute URL for [avatar], or null.
+  String? get avatarUrl => resolveMediaUrl(avatar);
+
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
       id: _asInt(json['id']),
       name: (json['name'] ?? '').toString(),
       email: (json['email'] ?? '').toString(),
       phone: json['phone']?.toString(),
-      avatar: json['avatar']?.toString(),
+      avatar: (json['avatar'] ?? json['avatar_url'] ?? json['photo'])
+          ?.toString(),
       currency: (json['currency'] ?? 'USD').toString(),
       timezone: json['timezone']?.toString(),
       language: json['language']?.toString(),

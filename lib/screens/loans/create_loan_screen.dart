@@ -117,19 +117,25 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
   }
 
   void _pickContact(ContactMatchResult c) {
+    setState(() => _selected = c);
+  }
+
+  void _continueWithSelected() {
+    final c = _selected;
+    if (c == null) {
+      showApiError(context, ApiException(message: 'Select a contact'));
+      return;
+    }
     if (!c.isAppUser || c.user == null) {
       showApiError(
         context,
         ApiException(
-          message: 'Pick an On Fendo contact — loans save to the server',
+          message: 'Only On Fendo contacts can be saved to the server',
         ),
       );
       return;
     }
-    setState(() {
-      _selected = c;
-      _step = _LoanStep.details;
-    });
+    setState(() => _step = _LoanStep.details);
   }
 
   Future<void> _save() async {
@@ -229,8 +235,10 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
                           matching: _matching,
                           contacts: _filtered,
                           query: _query,
+                          selected: _selected,
                           onQuery: (v) => setState(() => _query = v),
                           onSelect: _pickContact,
+                          onContinue: _continueWithSelected,
                         )
                       : _DetailsStep(
                           key: const ValueKey('details'),
@@ -259,15 +267,19 @@ class _ContactsStep extends StatelessWidget {
     required this.matching,
     required this.contacts,
     required this.query,
+    required this.selected,
     required this.onQuery,
     required this.onSelect,
+    required this.onContinue,
   });
 
   final bool matching;
   final List<ContactMatchResult> contacts;
   final String query;
+  final ContactMatchResult? selected;
   final ValueChanged<String> onQuery;
   final ValueChanged<ContactMatchResult> onSelect;
+  final VoidCallback onContinue;
 
   @override
   Widget build(BuildContext context) {
@@ -305,19 +317,39 @@ class _ContactsStep extends StatelessWidget {
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (context, i) {
               final c = contacts[i];
-              return _ContactTile(contact: c, onTap: () => onSelect(c));
+              return _ContactTile(
+                contact: c,
+                selected: selected?.localId == c.localId,
+                onTap: () => onSelect(c),
+              );
             },
           ),
         ),
+        if (selected != null)
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+              child: AuthPrimaryButton(
+                label: 'Continue with ${selected!.user?.name ?? selected!.name}',
+                onPressed: onContinue,
+              ),
+            ),
+          ),
       ],
     );
   }
 }
 
 class _ContactTile extends StatelessWidget {
-  const _ContactTile({required this.contact, required this.onTap});
+  const _ContactTile({
+    required this.contact,
+    required this.selected,
+    required this.onTap,
+  });
 
   final ContactMatchResult contact;
+  final bool selected;
   final VoidCallback onTap;
 
   @override
@@ -341,7 +373,12 @@ class _ContactTile extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.border.withValues(alpha: 0.7)),
+            border: Border.all(
+              color: selected
+                  ? AppColors.mint.withValues(alpha: 0.55)
+                  : AppColors.border.withValues(alpha: 0.7),
+              width: selected ? 1.6 : 1,
+            ),
           ),
           child: Row(
             children: [
@@ -385,6 +422,7 @@ class _ContactTile extends StatelessWidget {
               ),
               if (onApp)
                 Container(
+                  margin: const EdgeInsets.only(right: 8),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
@@ -399,24 +437,13 @@ class _ContactTile extends StatelessWidget {
                       color: AppColors.mintDim,
                     ),
                   ),
-                )
-              else
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceMuted,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    'Contact',
-                    style: GoogleFonts.manrope(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textMuted,
-                    ),
-                  ),
                 ),
+              Icon(
+                selected
+                    ? Icons.check_circle_rounded
+                    : Icons.circle_outlined,
+                color: selected ? AppColors.mint : AppColors.textMuted,
+              ),
             ],
           ),
         ),

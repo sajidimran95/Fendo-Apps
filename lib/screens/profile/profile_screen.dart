@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -7,6 +9,7 @@ import '../../core/network/api_exception.dart';
 import '../../services/auth_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
+import '../../utils/media_url.dart';
 import '../../widgets/common/app_widgets.dart';
 import '../auth/login_screen.dart';
 import '../reports/reports_screen.dart';
@@ -26,6 +29,8 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _uploadingAvatar = false;
   bool _refreshing = false;
+  String? _localAvatarPath;
+  int _avatarCacheBust = 0;
 
   @override
   void initState() {
@@ -39,6 +44,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final user = await AuthController.instance.userApi.getProfile();
       AuthController.instance.setUser(user);
+      if (mounted) {
+        setState(() {
+          _localAvatarPath = null;
+          _avatarCacheBust = DateTime.now().millisecondsSinceEpoch;
+        });
+      }
     } on ApiException {
       // Keep cached session user if profile fetch fails.
     } finally {
@@ -98,24 +109,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
-    setState(() => _uploadingAvatar = true);
+    setState(() {
+      _uploadingAvatar = true;
+      _localAvatarPath = file.path; // instant preview
+    });
     try {
+      final current = AuthController.instance.user;
       final user = await AuthController.instance.userApi.uploadAvatar(
         filePath: file.path,
         fileName: file.name,
+        current: current,
       );
       AuthController.instance.setUser(user);
       if (!mounted) return;
+      setState(() {
+        _avatarCacheBust = DateTime.now().millisecondsSinceEpoch;
+      });
       showApiMessage(context, 'Avatar updated');
     } on ApiException catch (e) {
       if (!mounted) return;
+      setState(() => _localAvatarPath = null);
       showApiError(context, e);
     } catch (e) {
       if (!mounted) return;
+      setState(() => _localAvatarPath = null);
       showApiError(context, e);
     } finally {
       if (mounted) setState(() => _uploadingAvatar = false);
     }
+  }
+
+  ImageProvider? _avatarImage(String? avatarPath) {
+    if (_localAvatarPath != null &&
+        _localAvatarPath!.isNotEmpty &&
+        !kIsWeb) {
+      return FileImage(File(_localAvatarPath!));
+    }
+    final url = resolveMediaUrl(avatarPath, cacheBust: _avatarCacheBust);
+    if (url == null || url.isEmpty) return null;
+    return NetworkImage(url);
   }
 
   @override
@@ -128,7 +160,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final email = user?.email ?? '';
         final phone = user?.phone;
         final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-        final avatarUrl = user?.avatar;
+        final avatarImage = _avatarImage(user?.avatar);
 
         return Scaffold(
           backgroundColor: AppColors.canvas,
@@ -151,11 +183,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             CircleAvatar(
                               radius: 34,
                               backgroundColor: AppColors.mintWash,
-                              backgroundImage:
-                                  avatarUrl != null && avatarUrl.isNotEmpty
-                                      ? NetworkImage(avatarUrl)
-                                      : null,
-                              child: avatarUrl == null || avatarUrl.isEmpty
+                              backgroundImage: avatarImage,
+                              child: avatarImage == null
                                   ? Text(
                                       initial,
                                       style: GoogleFonts.sora(
