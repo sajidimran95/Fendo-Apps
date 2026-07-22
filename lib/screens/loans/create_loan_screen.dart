@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
 import '../../core/storage/app_prefs.dart';
 import '../../models/contact_match_model.dart';
+import '../../services/auth_controller.dart';
 import '../../services/contacts_match_service.dart';
+import '../../services/groups_controller.dart';
 import '../../services/loans_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
@@ -126,16 +129,77 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
       showApiError(context, ApiException(message: 'Select a contact'));
       return;
     }
-    if (!c.isAppUser || c.user == null) {
+    final hasPhone = c.phones.any((p) => p.trim().isNotEmpty) ||
+        ((c.user?.phone ?? '').trim().isNotEmpty);
+    final hasEmail = c.emails.any((e) => e.contains('@')) ||
+        ((c.user?.email ?? '').contains('@'));
+    if (!c.isAppUser && !hasPhone && !hasEmail) {
       showApiError(
         context,
         ApiException(
-          message: 'Only On Fendo contacts can be saved to the server',
+          message: 'Contact needs a phone or email so we can send an invite',
         ),
       );
       return;
     }
     setState(() => _step = _LoanStep.details);
+  }
+
+  Future<String?> _autoSendInvite(ContactMatchResult contact) async {
+    try {
+      await GroupsController.instance.loadGroups();
+      var groups = GroupsController.instance.groups;
+      if (groups.isEmpty) {
+        final me = AuthController.instance.user;
+        final currency = (me?.currency.trim().isNotEmpty == true)
+            ? me!.currency
+            : 'USD';
+        await GroupsController.instance.createGroup(
+          name: 'Friends',
+          type: 'friends',
+          currency: currency,
+          simplifyDebts: true,
+        );
+        groups = GroupsController.instance.groups;
+      }
+      if (groups.isEmpty) return null;
+
+      final groupId = groups.first.id;
+      final emails = <String>{
+        if ((contact.user?.email ?? '').contains('@')) contact.user!.email,
+        ...contact.emails.where((e) => e.contains('@')),
+      }.toList();
+      final phones = <String>{
+        if ((contact.user?.phone ?? '').trim().isNotEmpty)
+          contact.user!.phone!.trim(),
+        ...contact.phones.map((p) => p.trim()).where((p) => p.isNotEmpty),
+      }.toList();
+
+      if (emails.isNotEmpty || phones.isNotEmpty) {
+        try {
+          await GroupsController.instance.inviteContacts(
+            groupId,
+            emails: emails,
+            phones: phones,
+          );
+        } catch (_) {
+          // Non-users often 422/not_found — still send invite link/code.
+        }
+      }
+
+      final link =
+          await GroupsController.instance.createInviteLink(groupId);
+      final code = link.inviteToken.trim().isNotEmpty
+          ? link.inviteToken
+          : link.inviteLink;
+      final shareText = link.inviteLink.trim().isNotEmpty
+          ? 'Join me on Fendo: ${link.inviteLink}\nInvite code: $code'
+          : 'Join me on Fendo — invite code: $code';
+      await Clipboard.setData(ClipboardData(text: shareText));
+      return code;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _save() async {
@@ -148,36 +212,57 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
       showApiError(context, ApiException(message: 'Select a contact'));
       return;
     }
-    final user = _selected!.user;
-    if (user == null || !(_selected!.isAppUser)) {
+
+    final selected = _selected!;
+    final onApp = selected.isAppUser && selected.user != null;
+    final user = selected.user;
+    final personName = (user?.name.trim().isNotEmpty == true)
+        ? user!.name.trim()
+        : selected.name;
+    final phone = (user?.phone?.trim().isNotEmpty == true)
+        ? user!.phone!.trim()
+        : (selected.phones.isNotEmpty ? selected.phones.first.trim() : null);
+    final email = (user?.email.contains('@') == true)
+        ? user!.email
+        : (selected.emails.isNotEmpty ? selected.emails.first : null);
+
+    if (!onApp &&
+        (phone == null || phone.isEmpty) &&
+        (email == null || !email.contains('@'))) {
       showApiError(
         context,
-        ApiException(
-          message: 'Only On Fendo contacts can be saved to the server',
-        ),
+        ApiException(message: 'Need phone or email to invite this contact'),
       );
       return;
     }
 
     setState(() => _saving = true);
     try {
-      final personName = user.name.trim().isNotEmpty
-          ? user.name.trim()
-          : _selected!.name;
       await LoansController.instance.createLoan(
         personName: personName,
         amount: amount,
         direction: _direction,
         note: _note.text.trim().isEmpty ? null : _note.text.trim(),
-        counterpartyUserId: user.id,
-        counterpartyEmail: user.email,
+        counterpartyUserId: onApp ? user!.id : null,
+        counterpartyEmail: email,
+        counterpartyPhone: phone,
+        isAppUser: onApp,
       );
+
+      String? inviteCode;
+      if (!onApp) {
+        inviteCode = await _autoSendInvite(selected);
+      }
+
       if (!mounted) return;
+      final base = _direction == LoanDirection.give
+          ? 'Loan saved — you lent \$${amount.toStringAsFixed(2)}'
+          : 'Loan saved — you borrowed \$${amount.toStringAsFixed(2)}';
       showApiMessage(
         context,
-        _direction == LoanDirection.give
-            ? 'Loan saved — you lent \$${amount.toStringAsFixed(2)}'
-            : 'Loan saved — you borrowed \$${amount.toStringAsFixed(2)}',
+        inviteCode == null || inviteCode.isEmpty
+            ? base
+            : '$base · Invite code copied ($inviteCode)',
       );
       Navigator.pop(context);
     } catch (e) {
@@ -437,6 +522,24 @@ class _ContactTile extends StatelessWidget {
                       color: AppColors.mintDim,
                     ),
                   ),
+                )
+              else
+                Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceMuted,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    'Invite',
+                    style: GoogleFonts.manrope(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
                 ),
               Icon(
                 selected
@@ -510,11 +613,7 @@ class _DetailsStep extends StatelessWidget {
                     Text(
                       contact.isAppUser
                           ? 'On Fendo · ${contact.user?.email ?? ''}'
-                          : (contact.phones.isNotEmpty
-                              ? contact.phones.first
-                              : (contact.emails.isNotEmpty
-                                  ? contact.emails.first
-                                  : 'Phone contact')),
+                          : 'Not on Fendo yet · invite will be sent',
                       style: GoogleFonts.manrope(
                         fontSize: 12,
                         color: AppColors.textMuted,

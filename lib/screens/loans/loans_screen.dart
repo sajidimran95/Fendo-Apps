@@ -140,7 +140,7 @@ class _LoansScreenState extends State<LoansScreen> {
                             SoftTile(
                               margin: EdgeInsets.zero,
                               child: Text(
-                                'No loans yet. Tap + to lend or borrow with an On Fendo contact.',
+                                'No loans yet. Tap + to lend or borrow with any contact.',
                                 style: GoogleFonts.manrope(
                                   color: AppColors.textMuted,
                                 ),

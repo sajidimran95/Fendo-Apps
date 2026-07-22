@@ -25,6 +25,8 @@ class LoansController extends ChangeNotifier {
   static const lentPrefix = 'Loan: Lent to ';
   static const borrowedPrefix = 'Loan: Borrowed from ';
   static const _uidTag = 'fendo_uid:';
+  static const _phoneTag = 'fendo_phone:';
+  static const _emailTag = 'fendo_email:';
 
   ExpensesApi get _expensesApi => AuthController.instance.expensesApi;
 
@@ -79,15 +81,20 @@ class LoansController extends ChangeNotifier {
     }
   }
 
-  /// Creates a loan on the server (or local demo). Counterparty must be On Fendo.
+  /// Creates a loan on the server (or local demo).
+  ///
+  /// [counterpartyUserId] is required for On Fendo users. Non-app contacts can
+  /// be saved with [counterpartyPhone] / [counterpartyEmail] only.
   Future<MockLoan> createLoan({
     required String personName,
     required double amount,
     required LoanDirection direction,
     String currency = 'USD',
     String? note,
-    required int counterpartyUserId,
+    int? counterpartyUserId,
     String? counterpartyEmail,
+    String? counterpartyPhone,
+    bool isAppUser = true,
   }) async {
     final trimmedNote = note?.trim();
     final noteOrNull =
@@ -101,6 +108,7 @@ class LoansController extends ChangeNotifier {
         currency: currency,
         note: noteOrNull,
         counterpartyUserId: counterpartyUserId,
+        isAppUser: isAppUser,
       );
     }
 
@@ -109,7 +117,7 @@ class LoansController extends ChangeNotifier {
     if (meId == null) {
       throw ApiException(message: 'Sign in to save loans');
     }
-    if (counterpartyUserId == meId) {
+    if (counterpartyUserId != null && counterpartyUserId == meId) {
       throw ApiException(message: 'Pick someone else for this loan');
     }
 
@@ -132,6 +140,8 @@ class LoansController extends ChangeNotifier {
       expenseDate: date,
       merchantName: _encodeMeta(
         counterpartyUserId: counterpartyUserId,
+        phone: counterpartyPhone,
+        email: counterpartyEmail,
         note: noteOrNull,
       ),
       splitMethod: 'equal',
@@ -145,6 +155,7 @@ class LoansController extends ChangeNotifier {
       counterpartyUserId: counterpartyUserId,
       direction: direction,
       amount: amount,
+      isAppUser: isAppUser,
     );
     _loans.insert(0, loan);
     _loaded = true;
@@ -160,6 +171,7 @@ class LoansController extends ChangeNotifier {
     String currency = 'USD',
     String? note,
     int? counterpartyUserId,
+    bool isAppUser = true,
   }) {
     final now = DateTime.now();
     final date =
@@ -173,36 +185,58 @@ class LoansController extends ChangeNotifier {
       date: date,
       note: note,
       counterpartyUserId: counterpartyUserId,
+      isAppUser: isAppUser,
     );
     _loans.insert(0, loan);
     notifyListeners();
     return loan;
   }
 
-  String _encodeMeta({required int counterpartyUserId, String? note}) {
-    final base = '$_uidTag$counterpartyUserId';
-    if (note == null || note.isEmpty) return base;
-    return '$base|$note';
+  String _encodeMeta({
+    int? counterpartyUserId,
+    String? phone,
+    String? email,
+    String? note,
+  }) {
+    final parts = <String>[];
+    if (counterpartyUserId != null && counterpartyUserId > 0) {
+      parts.add('$_uidTag$counterpartyUserId');
+    } else if (phone != null && phone.trim().isNotEmpty) {
+      parts.add('$_phoneTag${phone.trim()}');
+    } else if (email != null && email.trim().isNotEmpty) {
+      parts.add('$_emailTag${email.trim()}');
+    }
+    if (note != null && note.isNotEmpty) {
+      if (parts.isEmpty) return note;
+      return '${parts.join('|')}|$note';
+    }
+    return parts.join('|');
   }
 
   ({int? userId, String? note}) _decodeMeta(String? raw) {
     if (raw == null || raw.isEmpty) {
       return (userId: null, note: null);
     }
-    if (!raw.startsWith(_uidTag)) {
-      return (userId: null, note: raw);
+    if (raw.startsWith(_uidTag)) {
+      final rest = raw.substring(_uidTag.length);
+      final pipe = rest.indexOf('|');
+      if (pipe < 0) {
+        return (userId: int.tryParse(rest.trim()), note: null);
+      }
+      return (
+        userId: int.tryParse(rest.substring(0, pipe).trim()),
+        note: rest.substring(pipe + 1).trim().isEmpty
+            ? null
+            : rest.substring(pipe + 1).trim(),
+      );
     }
-    final rest = raw.substring(_uidTag.length);
-    final pipe = rest.indexOf('|');
-    if (pipe < 0) {
-      return (userId: int.tryParse(rest.trim()), note: null);
+    if (raw.startsWith(_phoneTag) || raw.startsWith(_emailTag)) {
+      final pipe = raw.indexOf('|');
+      if (pipe < 0) return (userId: null, note: null);
+      final note = raw.substring(pipe + 1).trim();
+      return (userId: null, note: note.isEmpty ? null : note);
     }
-    return (
-      userId: int.tryParse(rest.substring(0, pipe).trim()),
-      note: rest.substring(pipe + 1).trim().isEmpty
-          ? null
-          : rest.substring(pipe + 1).trim(),
-    );
+    return (userId: null, note: raw);
   }
 
   MockLoan _fromExpense(ExpenseModel e, int? meId) {
@@ -276,6 +310,7 @@ extension on MockLoan {
     LoanDirection? direction,
     String? note,
     int? counterpartyUserId,
+    bool? isAppUser,
   }) {
     return MockLoan(
       id: id,
@@ -285,7 +320,7 @@ extension on MockLoan {
       direction: direction ?? this.direction,
       date: date,
       note: note ?? this.note,
-      isAppUser: isAppUser,
+      isAppUser: isAppUser ?? this.isAppUser,
       counterpartyUserId: counterpartyUserId ?? this.counterpartyUserId,
     );
   }

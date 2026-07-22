@@ -10,9 +10,14 @@ import '../../utils/api_feedback.dart';
 import '../../widgets/common/app_widgets.dart';
 
 class SettlementDetailScreen extends StatefulWidget {
-  const SettlementDetailScreen({super.key, required this.settlementId});
+  const SettlementDetailScreen({
+    super.key,
+    required this.settlementId,
+    this.initial,
+  });
 
   final int settlementId;
+  final SettlementModel? initial;
 
   @override
   State<SettlementDetailScreen> createState() => _SettlementDetailScreenState();
@@ -25,19 +30,24 @@ class _SettlementDetailScreenState extends State<SettlementDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _settlement = widget.initial;
     _load();
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    if (_settlement != null) {
+      setState(() => _loading = false);
+    } else {
+      setState(() => _loading = true);
+    }
     try {
-      final s =
-          await SettlementsController.instance.getSettlement(widget.settlementId);
+      final s = await SettlementsController.instance
+          .getSettlement(widget.settlementId);
       if (!mounted) return;
       setState(() => _settlement = s);
     } on ApiException catch (e) {
       if (!mounted) return;
-      showApiError(context, e);
+      if (_settlement == null) showApiError(context, e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }

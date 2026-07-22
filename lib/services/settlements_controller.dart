@@ -107,7 +107,66 @@ class SettlementsController extends ChangeNotifier {
         orElse: () => throw ApiException(message: 'Settlement not found'),
       );
     }
-    return _api.getSettlement(id);
+
+    // Prefer cache — live GET /settlements/{id} often returns 403.
+    for (final s in _settlements) {
+      if (s.id == id) return s;
+    }
+
+    try {
+      return await _api.getSettlement(id);
+    } on ApiException catch (e) {
+      final code = e.statusCode ?? 0;
+      if (code == 403 || code == 404) {
+        // Refresh list and resolve from there.
+        try {
+          final list = await _api.listSettlements();
+          _settlements
+            ..clear()
+            ..addAll(list);
+          notifyListeners();
+          for (final s in list) {
+            if (s.id == id) return s;
+          }
+        } catch (_) {}
+      }
+      rethrow;
+    }
+  }
+
+  Future<List<SettlementRequest>> loadRequests() async {
+    if (ApiConfig.demoAuth) {
+      _seedDemoIfNeeded();
+      notifyListeners();
+      return requests;
+    }
+    try {
+      final list = await _api.listRequests();
+      _requests
+        ..clear()
+        ..addAll(list);
+      notifyListeners();
+      return requests;
+    } on ApiException catch (e) {
+      // Server routes GET /settlements/{id} before /settlements/requests,
+      // so "requests" is treated as an ID → ModelNotFound 404.
+      if (_isBrokenRequestsListRoute(e)) {
+        notifyListeners();
+        return requests; // keep any session-created requests
+      }
+      rethrow;
+    }
+  }
+
+  bool _isBrokenRequestsListRoute(ApiException e) {
+    final code = e.statusCode ?? 0;
+    if (code != 404) return false;
+    final msg = e.message.toLowerCase();
+    return msg.contains('settlement') ||
+        msg.contains('requests') ||
+        msg.contains('no query results') ||
+        msg.contains('that record was not found') ||
+        msg.contains('could not be found');
   }
 
   Future<SettlementModel> createSettlement({
@@ -246,20 +305,6 @@ class SettlementsController extends ChangeNotifier {
     } catch (_) {
       return null;
     }
-  }
-
-  Future<List<SettlementRequest>> loadRequests() async {
-    if (ApiConfig.demoAuth) {
-      _seedDemoIfNeeded();
-      notifyListeners();
-      return requests;
-    }
-    final list = await _api.listRequests();
-    _requests
-      ..clear()
-      ..addAll(list);
-    notifyListeners();
-    return requests;
   }
 
   Future<SettlementRequest> createRequest({

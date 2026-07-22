@@ -36,7 +36,13 @@ class _SettlementsScreenState extends State<SettlementsScreen> {
     try {
       final settlements =
           await SettlementsController.instance.loadSettlements();
-      final requests = await SettlementsController.instance.loadRequests();
+      List<SettlementRequest> requests = const [];
+      try {
+        requests = await SettlementsController.instance.loadRequests();
+      } on ApiException {
+        // Live GET /settlements/requests is broken (route conflict). Continue.
+        requests = SettlementsController.instance.requests;
+      }
       if (!mounted) return;
       setState(() {
         _settlements = settlements;
@@ -456,7 +462,10 @@ class _SettlementsScreenState extends State<SettlementsScreen> {
                         Navigator.of(context).push(
                           MaterialPageRoute(
                             builder: (_) =>
-                                SettlementDetailScreen(settlementId: s.id),
+                                SettlementDetailScreen(
+                                  settlementId: s.id,
+                                  initial: s,
+                                ),
                           ),
                         );
                       },
