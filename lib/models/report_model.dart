@@ -14,7 +14,14 @@ class ReportBucket {
           json['member']?.toString() ??
           json['key']?.toString() ??
           '—',
-      amount: _asDouble(json['amount'] ?? json['total'] ?? json['value'] ?? 0),
+      amount: _asDouble(
+        json['amount'] ??
+            json['total'] ??
+            json['value'] ??
+            json['net_balance'] ??
+            json['spent'] ??
+            0,
+      ),
     );
   }
 
@@ -58,6 +65,9 @@ class PersonalReport {
     final data = json['report'] is Map
         ? Map<String, dynamic>.from(json['report'] as Map)
         : json;
+    final period = data['period'] is Map
+        ? Map<String, dynamic>.from(data['period'] as Map)
+        : null;
     return PersonalReport(
       totalSpent: ReportBucket._asDouble(
         data['total_spent'] ?? data['totalSpent'] ?? 0,
@@ -69,8 +79,8 @@ class PersonalReport {
       byMonth: ReportBucket.listFrom(data['by_month']),
       byGroup: ReportBucket.listFrom(data['by_group']),
       balanceTrend: ReportBucket.listFrom(data['balance_trend']),
-      from: data['from']?.toString(),
-      to: data['to']?.toString(),
+      from: period?['from']?.toString() ?? data['from']?.toString(),
+      to: period?['to']?.toString() ?? data['to']?.toString(),
     );
   }
 }

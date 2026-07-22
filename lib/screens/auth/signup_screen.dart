@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -70,17 +71,18 @@ class _SignupScreenState extends State<SignupScreen>
       );
       return;
     }
-    if (password.length < 8) {
-      showApiError(
-        context,
-        ApiException(message: 'Password must be at least 8 characters'),
-      );
+    final passwordError = _passwordRuleError(password);
+    if (passwordError != null) {
+      showApiError(context, ApiException(message: passwordError));
       return;
     }
 
     setState(() => _loading = true);
     try {
-      await AuthController.instance.register(
+      debugPrint(
+        'REGISTER → ${AuthController.instance.client.dio.options.baseUrl}',
+      );
+      final result = await AuthController.instance.register(
         name: name,
         email: email,
         password: password,
@@ -88,23 +90,65 @@ class _SignupScreenState extends State<SignupScreen>
         phone: phone.isEmpty ? null : phone,
       );
       if (!mounted) return;
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => OtpVerifyScreen(
-            email: email,
-            purpose: OtpPurpose.register,
-          ),
-        ),
-      );
+      final apiMsg = result['message']?.toString();
+      if (apiMsg != null && apiMsg.isNotEmpty) {
+        showApiMessage(context, apiMsg);
+      }
+      _goToOtp(email);
     } on ApiException catch (e) {
+      debugPrint('REGISTER ApiException: ${e.statusCode} ${e.displayMessage}');
       if (!mounted) return;
+      final msg = e.displayMessage.toLowerCase();
+      final emailTaken = msg.contains('already been taken') ||
+          msg.contains('already taken') ||
+          (e.errors?['email']?.any(
+                (m) => m.toLowerCase().contains('taken'),
+              ) ??
+              false);
+      if (emailTaken) {
+        showApiMessage(
+          context,
+          'This email is already registered. Enter the OTP sent to your email.',
+        );
+        _goToOtp(email);
+        return;
+      }
       showApiError(context, e);
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('REGISTER unexpected: $e\n$st');
       if (!mounted) return;
       showApiError(context, e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _goToOtp(String email) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => OtpVerifyScreen(
+          email: email,
+          purpose: OtpPurpose.register,
+        ),
+      ),
+    );
+  }
+
+  /// Live API: min 8, upper + lower + number.
+  String? _passwordRuleError(String password) {
+    if (password.length < 8) {
+      return 'Password must be at least 8 characters';
+    }
+    if (!RegExp(r'[A-Z]').hasMatch(password)) {
+      return 'Password needs at least one uppercase letter';
+    }
+    if (!RegExp(r'[a-z]').hasMatch(password)) {
+      return 'Password needs at least one lowercase letter';
+    }
+    if (!RegExp(r'[0-9]').hasMatch(password)) {
+      return 'Password needs at least one number';
+    }
+    return null;
   }
 
   @override
@@ -157,7 +201,7 @@ class _SignupScreenState extends State<SignupScreen>
                         begin: 0.1,
                         end: 0.5,
                         child: Text(
-                          'Static preview — fill anything and continue.',
+                          'Password needs 8+ chars, upper, lower, and a number.',
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                       ),
@@ -182,7 +226,7 @@ class _SignupScreenState extends State<SignupScreen>
                         child: AuthTextField(
                           controller: _emailCtrl,
                           label: 'Email',
-                          hint: 'any@email.com',
+                          hint: 'you@email.com',
                           keyboardType: TextInputType.emailAddress,
                           textInputAction: TextInputAction.next,
                           prefixIcon: Icons.mail_outline_rounded,
@@ -210,7 +254,7 @@ class _SignupScreenState extends State<SignupScreen>
                         child: AuthTextField(
                           controller: _passwordCtrl,
                           label: 'Password',
-                          hint: 'anything',
+                          hint: 'e.g. Password1',
                           obscureText: _obscure,
                           textInputAction: TextInputAction.next,
                           prefixIcon: Icons.lock_outline_rounded,
@@ -235,7 +279,7 @@ class _SignupScreenState extends State<SignupScreen>
                         child: AuthTextField(
                           controller: _confirmCtrl,
                           label: 'Confirm password',
-                          hint: 'anything',
+                          hint: 'Repeat password',
                           obscureText: _obscureConfirm,
                           textInputAction: TextInputAction.done,
                           prefixIcon: Icons.lock_outline_rounded,

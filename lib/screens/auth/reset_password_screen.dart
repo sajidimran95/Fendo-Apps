@@ -48,10 +48,23 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       showApiError(context, ApiException(message: 'Passwords do not match'));
       return;
     }
+    if (password.length < 8 ||
+        !RegExp(r'[A-Z]').hasMatch(password) ||
+        !RegExp(r'[a-z]').hasMatch(password) ||
+        !RegExp(r'[0-9]').hasMatch(password)) {
+      showApiError(
+        context,
+        ApiException(
+          message:
+              'Password needs 8+ chars, one upper, one lower, and one number',
+        ),
+      );
+      return;
+    }
 
     setState(() => _loading = true);
     try {
-      final msg = await AuthController.instance.api.resetPassword(
+      final msg = await AuthController.instance.resetPassword(
         email: widget.email,
         otp: widget.otp,
         password: password,

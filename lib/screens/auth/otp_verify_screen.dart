@@ -114,7 +114,7 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
 
     try {
       if (widget.purpose == OtpPurpose.resetPassword) {
-        await AuthController.instance.api.forgotPassword(email: widget.email);
+        await AuthController.instance.forgotPassword(email: widget.email);
       } else {
         await AuthController.instance.resendOtp(
           email: widget.email,

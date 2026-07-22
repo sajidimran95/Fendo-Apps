@@ -35,7 +35,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _loadProfile() async {
     if (_refreshing) return;
-    if (AuthController.instance.isDemo) return;
     setState(() => _refreshing = true);
     try {
       final user = await AuthController.instance.userApi.getProfile();

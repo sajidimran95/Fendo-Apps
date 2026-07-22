@@ -47,7 +47,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
 
     setState(() => _loading = true);
     try {
-      final msg = await AuthController.instance.api.forgotPassword(email: email);
+      final msg =
+          await AuthController.instance.forgotPassword(email: email);
       if (!mounted) return;
       showApiMessage(
         context,

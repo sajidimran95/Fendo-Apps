@@ -135,13 +135,9 @@ class _AuthPrimaryButtonState extends State<AuthPrimaryButton> {
 
     return GestureDetector(
       onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
-      onTapUp: enabled
-          ? (_) {
-              setState(() => _pressed = false);
-              widget.onPressed?.call();
-            }
-          : null,
+      onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
       onTapCancel: () => setState(() => _pressed = false),
+      onTap: enabled ? widget.onPressed : null,
       child: AnimatedScale(
         scale: _pressed ? 0.985 : 1,
         duration: const Duration(milliseconds: 110),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/storage/app_prefs.dart';
+import '../../services/contacts_match_service.dart';
 import '../../theme/app_colors.dart';
 import '../activity/activity_screen.dart';
 import '../bills/bills_screen.dart';
@@ -46,7 +47,12 @@ class _MainShellState extends State<MainShell> {
   }
 
   Future<void> _finishContactsPrompt({required bool allowed}) async {
-    await AppPrefs.instance.setContactsAllowed(allowed);
+    if (allowed) {
+      final granted = await ContactsMatchService.requestPermission();
+      await AppPrefs.instance.setContactsAllowed(granted);
+    } else {
+      await AppPrefs.instance.setContactsAllowed(false);
+    }
     if (!mounted) return;
     setState(() => _needsContactsPrompt = false);
   }

@@ -3,8 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
 import '../../core/storage/app_prefs.dart';
-import '../../data/mock_loans.dart';
 import '../../models/contact_match_model.dart';
+import '../../services/contacts_match_service.dart';
 import '../../services/loans_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
@@ -12,7 +12,7 @@ import '../../widgets/auth/auth_widgets.dart';
 import '../../widgets/common/app_widgets.dart';
 import 'contacts_permission_screen.dart';
 
-/// Create Loan — static UI mirroring API flow.
+/// Create Loan — contacts matched via POST /contacts/match.
 /// Contacts permission is asked once after first login (MainShell).
 class CreateLoanScreen extends StatefulWidget {
   const CreateLoanScreen({super.key});
@@ -60,12 +60,18 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
   }
 
   Future<void> _loadMatchedContacts() async {
-    await Future<void>.delayed(const Duration(milliseconds: 350));
-    if (!mounted) return;
-    setState(() {
-      _contacts = MockLoans.matchedContacts;
-      _matching = false;
-    });
+    try {
+      final matched = await ContactsMatchService.loadMatchedContacts();
+      if (!mounted) return;
+      setState(() {
+        _contacts = matched;
+        _matching = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _matching = false);
+      showApiError(context, e);
+    }
   }
 
   @override
@@ -76,8 +82,16 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
   }
 
   Future<void> _allowContacts() async {
-    await AppPrefs.instance.setContactsAllowed(true);
+    final granted = await ContactsMatchService.requestPermission();
+    await AppPrefs.instance.setContactsAllowed(granted);
     if (!mounted) return;
+    if (!granted) {
+      showApiError(
+        context,
+        ApiException(message: 'Contacts permission denied'),
+      );
+      return;
+    }
     setState(() {
       _matching = true;
       _step = _LoanStep.contacts;

@@ -1,16 +1,19 @@
 import 'package:flutter/foundation.dart';
 
-import '../core/config/api_config.dart';
 import '../core/network/api_client.dart';
 import '../core/network/api_exception.dart';
+import '../core/storage/app_prefs.dart';
 import '../core/storage/token_storage.dart';
 import '../models/user_model.dart';
 import 'activity_api.dart';
+import 'activity_controller.dart';
 import 'auth_api.dart';
 import 'balances_api.dart';
 import 'bills_api.dart';
 import 'categories_api.dart';
 import 'contacts_api.dart';
+import 'dashboard_api.dart';
+import 'dashboard_controller.dart';
 import 'expenses_api.dart';
 import 'groups_api.dart';
 import 'notifications_api.dart';
@@ -18,7 +21,7 @@ import 'reports_api.dart';
 import 'settlements_api.dart';
 import 'user_api.dart';
 
-/// App-wide auth session: token + current user.
+/// App-wide auth session: token + current user (live API only).
 class AuthController extends ChangeNotifier {
   AuthController._();
 
@@ -43,6 +46,7 @@ class AuthController extends ChangeNotifier {
   late final ReportsApi _reportsApi = ReportsApi(_client);
   late final CategoriesApi _categoriesApi = CategoriesApi(_client);
   late final ContactsApi _contactsApi = ContactsApi(_client);
+  late final DashboardApi _dashboardApi = DashboardApi(_client);
 
   AuthApi get api => _api;
   UserApi get userApi => _userApi;
@@ -56,17 +60,16 @@ class AuthController extends ChangeNotifier {
   ReportsApi get reportsApi => _reportsApi;
   CategoriesApi get categoriesApi => _categoriesApi;
   ContactsApi get contactsApi => _contactsApi;
+  DashboardApi get dashboardApi => _dashboardApi;
   ApiClient get client => _client;
 
   UserModel? _user;
   bool _ready = false;
   bool _authenticated = false;
-  bool _demo = false;
 
   UserModel? get user => _user;
   bool get isReady => _ready;
   bool get isAuthenticated => _authenticated;
-  bool get isDemo => _demo;
 
   String get deviceName {
     if (kIsWeb) return 'web';
@@ -75,20 +78,12 @@ class AuthController extends ChangeNotifier {
 
   Future<void> bootstrap() async {
     final token = await _storage.readAccessToken();
-    if (token == null || token.isEmpty) {
+    if (token == null || token.isEmpty || token == 'demo-access-token') {
+      if (token == 'demo-access-token') {
+        await _storage.clear();
+      }
       _authenticated = false;
       _user = null;
-      _ready = true;
-      notifyListeners();
-      return;
-    }
-
-    if (token == ApiConfig.demoToken) {
-      final email = await _storage.readDemoEmail() ?? 'demo@fendo.app';
-      final name = await _storage.readDemoName() ?? _nameFromEmail(email);
-      _user = _demoUser(email: email, name: name);
-      _authenticated = true;
-      _demo = true;
       _ready = true;
       notifyListeners();
       return;
@@ -126,14 +121,11 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 1.4 POST /auth/login
   Future<UserModel> login({
     required String email,
     required String password,
   }) async {
-    if (ApiConfig.demoAuth) {
-      return _loginDemo(email: email);
-    }
-
     final res = await _api.login(
       email: email,
       password: password,
@@ -147,6 +139,7 @@ class AuthController extends ChangeNotifier {
     return res.user;
   }
 
+  /// 1.9 POST /auth/social-login
   Future<UserModel> socialLogin({
     required String provider,
     required String providerId,
@@ -154,10 +147,6 @@ class AuthController extends ChangeNotifier {
     required String name,
     String? avatar,
   }) async {
-    if (ApiConfig.demoAuth) {
-      return _loginDemo(email: email, name: name);
-    }
-
     final res = await _api.socialLogin(
       provider: provider,
       providerId: providerId,
@@ -174,7 +163,7 @@ class AuthController extends ChangeNotifier {
     return res.user;
   }
 
-  /// 1.1 Register — returns message (and optional dev OTP).
+  /// 1.1 POST /auth/register
   Future<Map<String, dynamic>> register({
     required String name,
     required String email,
@@ -182,13 +171,6 @@ class AuthController extends ChangeNotifier {
     required String passwordConfirmation,
     String? phone,
   }) async {
-    if (ApiConfig.demoAuth) {
-      return {
-        'email': email,
-        'message': 'Registration successful. Please verify your email.',
-        'otp': '123456',
-      };
-    }
     return _api.register(
       name: name,
       email: email,
@@ -198,19 +180,18 @@ class AuthController extends ChangeNotifier {
     );
   }
 
-  /// 1.2 Verify OTP for register → session.
+  /// 1.2 POST /auth/verify-otp (register)
   Future<UserModel> verifyRegisterOtp({
     required String email,
     required String otp,
   }) async {
-    if (ApiConfig.demoAuth) {
-      return _loginDemo(email: email);
-    }
     final res = await _api.verifyOtp(
       email: email,
       otp: otp,
       purpose: 'register',
     );
+    // Ask contacts permission once after new registration.
+    await AppPrefs.instance.clearContactsPrefs();
     await applyAuth(
       user: res.user,
       accessToken: res.accessToken,
@@ -219,69 +200,44 @@ class AuthController extends ChangeNotifier {
     return res.user;
   }
 
-  /// 1.3 Resend OTP
+  /// 1.3 POST /auth/resend-otp
   Future<String?> resendOtp({
     required String email,
     required String purpose,
   }) async {
-    if (ApiConfig.demoAuth) {
-      return 'OTP resent successfully.';
-    }
     return _api.resendOtp(email: email, purpose: purpose);
   }
 
-  Future<UserModel> _loginDemo({
+  /// 1.7 POST /auth/forgot-password
+  Future<String?> forgotPassword({required String email}) async {
+    return _api.forgotPassword(email: email);
+  }
+
+  /// 1.8 POST /auth/reset-password
+  Future<String?> resetPassword({
     required String email,
-    String? name,
+    required String otp,
+    required String password,
+    required String passwordConfirmation,
   }) async {
-    final resolvedName = (name != null && name.trim().isNotEmpty)
-        ? name.trim()
-        : _nameFromEmail(email);
-    final user = _demoUser(email: email, name: resolvedName);
-    await _storage.saveDemoIdentity(email: email, name: resolvedName);
-    _demo = true;
-    await applyAuth(
-      user: user,
-      accessToken: ApiConfig.demoToken,
-    );
-    return user;
-  }
-
-  UserModel _demoUser({required String email, required String name}) {
-    return UserModel(
-      id: 1,
-      name: name,
+    return _api.resetPassword(
       email: email,
-      phone: '+1 555 0100',
-      currency: 'USD',
-      timezone: 'UTC',
-      language: 'en',
+      otp: otp,
+      password: password,
+      passwordConfirmation: passwordConfirmation,
     );
-  }
-
-  String _nameFromEmail(String email) {
-    final local = email.split('@').first.trim();
-    if (local.isEmpty) return 'Fendo User';
-    return local[0].toUpperCase() + local.substring(1);
   }
 
   Future<void> logout() async {
-    final token = await _storage.readAccessToken();
-    if (token != ApiConfig.demoToken) {
-      try {
-        await _api.logout();
-      } on ApiException {
-        // Still clear local session.
-      }
+    try {
+      await _api.logout();
+    } on ApiException {
+      // Still clear local session.
     }
     await _clearLocal();
   }
 
   Future<UserModel> refreshMe() async {
-    final token = await _storage.readAccessToken();
-    if (token == ApiConfig.demoToken) {
-      return _user!;
-    }
     try {
       _user = await _userApi.getProfile();
     } on ApiException {
@@ -304,7 +260,8 @@ class AuthController extends ChangeNotifier {
     await _storage.clear();
     _user = null;
     _authenticated = false;
-    _demo = false;
+    DashboardController.instance.clear();
+    ActivityController.instance.clear();
     notifyListeners();
   }
 }

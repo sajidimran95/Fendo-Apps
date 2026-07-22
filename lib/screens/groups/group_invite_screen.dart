@@ -4,8 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
 import '../../core/storage/app_prefs.dart';
-import '../../data/mock_loans.dart';
 import '../../models/contact_match_model.dart';
+import '../../services/contacts_match_service.dart';
 import '../../services/groups_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
@@ -52,13 +52,28 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
   Future<void> _loadContacts() async {
     final allowed = await AppPrefs.instance.contactsAllowed;
     if (!mounted) return;
+    if (!allowed) {
+      setState(() {
+        _contactsAllowed = false;
+        _loadingContacts = false;
+      });
+      return;
+    }
     setState(() {
-      _contactsAllowed = allowed;
-      _loadingContacts = false;
-      if (allowed) {
-        _contacts = MockLoans.matchedContacts;
-      }
+      _contactsAllowed = true;
+      _loadingContacts = true;
     });
+    try {
+      final matched = await ContactsMatchService.loadMatchedContacts();
+      if (!mounted) return;
+      setState(() {
+        _contacts = matched;
+        _loadingContacts = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingContacts = false);
+    }
   }
 
   Future<void> _enableContacts() async {
@@ -71,12 +86,32 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
       ),
     );
     if (result == true) {
-      await AppPrefs.instance.setContactsAllowed(true);
+      final granted = await ContactsMatchService.requestPermission();
+      await AppPrefs.instance.setContactsAllowed(granted);
       if (!mounted) return;
+      if (!granted) {
+        showApiError(
+          context,
+          ApiException(message: 'Contacts permission denied'),
+        );
+        return;
+      }
       setState(() {
         _contactsAllowed = true;
-        _contacts = MockLoans.matchedContacts;
+        _loadingContacts = true;
       });
+      try {
+        final matched = await ContactsMatchService.loadMatchedContacts();
+        if (!mounted) return;
+        setState(() {
+          _contacts = matched;
+          _loadingContacts = false;
+        });
+      } catch (e) {
+        if (!mounted) return;
+        setState(() => _loadingContacts = false);
+        showApiError(context, e);
+      }
     } else if (result == false) {
       await AppPrefs.instance.setContactsAllowed(false);
     }
@@ -308,7 +343,7 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Select people to invite by email match',
+                      'API invites by email only. Pick contacts that have an email, or On Fendo users.',
                       style: GoogleFonts.manrope(
                         fontSize: 12,
                         color: AppColors.textMuted,

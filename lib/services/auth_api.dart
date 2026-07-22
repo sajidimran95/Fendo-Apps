@@ -27,7 +27,16 @@ class AuthApi {
         if (phone != null && phone.isNotEmpty) 'phone': phone,
       },
     );
-    return unwrapMap(res.data);
+    try {
+      return unwrapMap(res.data);
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException(
+        message: 'Could not parse register response: $e',
+        statusCode: res.statusCode,
+      );
+    }
   }
 
   /// 1.2 POST /auth/verify-otp

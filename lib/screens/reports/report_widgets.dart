@@ -70,11 +70,13 @@ class ReportSummaryTile extends StatelessWidget {
     super.key,
     required this.totalSpent,
     required this.totalOwed,
+    this.billsPaid = 0,
     this.subtitle,
   });
 
   final double totalSpent;
   final double totalOwed;
+  final double billsPaid;
   final String? subtitle;
 
   @override
@@ -100,14 +102,14 @@ class ReportSummaryTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Total spent',
+                      'Expenses',
                       style: GoogleFonts.manrope(
                         color: AppColors.textSecondary,
                         fontSize: 12,
                       ),
                     ),
                     const SizedBox(height: 4),
-                    MoneyText(totalSpent, positive: false, size: 26),
+                    MoneyText(totalSpent, positive: false, size: 22),
                   ],
                 ),
               ),
@@ -116,14 +118,30 @@ class ReportSummaryTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Total owed',
+                      'Bills paid',
                       style: GoogleFonts.manrope(
                         color: AppColors.textSecondary,
                         fontSize: 12,
                       ),
                     ),
                     const SizedBox(height: 4),
-                    MoneyText(totalOwed, positive: false, size: 26),
+                    MoneyText(billsPaid, positive: false, size: 22),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Owed',
+                      style: GoogleFonts.manrope(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    MoneyText(totalOwed, positive: false, size: 22),
                   ],
                 ),
               ),
