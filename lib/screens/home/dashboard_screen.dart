@@ -30,6 +30,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       DashboardController.instance.load(force: true);
       NotificationsController.instance.loadUnreadCount();
+      LoansController.instance.load();
     });
   }
 
@@ -37,6 +38,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     await Future.wait([
       DashboardController.instance.load(force: true),
       NotificationsController.instance.loadUnreadCount(),
+      LoansController.instance.load(force: true),
     ]);
   }
 
@@ -446,7 +448,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               child: _StatBox(
                                 label: 'This month',
                                 value:
-                                    '\$${(stats?.expensesThisMonth ?? 0).toStringAsFixed(0)}',
+                                    '\$${dash.spendingThisMonth.toStringAsFixed(0)}',
                               ),
                             ),
                             const SizedBox(width: 10),

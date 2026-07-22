@@ -117,6 +117,15 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
   }
 
   void _pickContact(ContactMatchResult c) {
+    if (!c.isAppUser || c.user == null) {
+      showApiError(
+        context,
+        ApiException(
+          message: 'Pick an On Fendo contact — loans save to the server',
+        ),
+      );
+      return;
+    }
     setState(() {
       _selected = c;
       _step = _LoanStep.details;
@@ -133,29 +142,44 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
       showApiError(context, ApiException(message: 'Select a contact'));
       return;
     }
+    final user = _selected!.user;
+    if (user == null || !(_selected!.isAppUser)) {
+      showApiError(
+        context,
+        ApiException(
+          message: 'Only On Fendo contacts can be saved to the server',
+        ),
+      );
+      return;
+    }
 
     setState(() => _saving = true);
-    await Future<void>.delayed(const Duration(milliseconds: 350));
-    if (!mounted) return;
-
-    final personName = _selected!.user?.name ?? _selected!.name;
-    LoansController.instance.addLoan(
-      personName: personName,
-      amount: amount,
-      direction: _direction,
-      note: _note.text.trim().isEmpty ? null : _note.text.trim(),
-      counterpartyUserId: _selected!.user?.id,
-    );
-
-    setState(() => _saving = false);
-
-    showApiMessage(
-      context,
-      _direction == LoanDirection.give
-          ? 'Loan saved — you lent \$${amount.toStringAsFixed(2)}'
-          : 'Loan saved — you borrowed \$${amount.toStringAsFixed(2)}',
-    );
-    Navigator.pop(context);
+    try {
+      final personName = user.name.trim().isNotEmpty
+          ? user.name.trim()
+          : _selected!.name;
+      await LoansController.instance.createLoan(
+        personName: personName,
+        amount: amount,
+        direction: _direction,
+        note: _note.text.trim().isEmpty ? null : _note.text.trim(),
+        counterpartyUserId: user.id,
+        counterpartyEmail: user.email,
+      );
+      if (!mounted) return;
+      showApiMessage(
+        context,
+        _direction == LoanDirection.give
+            ? 'Loan saved — you lent \$${amount.toStringAsFixed(2)}'
+            : 'Loan saved — you borrowed \$${amount.toStringAsFixed(2)}',
+      );
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      showApiError(context, e);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override

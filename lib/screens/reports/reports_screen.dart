@@ -6,6 +6,7 @@ import '../../models/bill_model.dart';
 import '../../models/report_model.dart';
 import '../../services/bills_controller.dart';
 import '../../services/reports_controller.dart';
+import '../../services/spending_totals.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
 import '../../widgets/common/app_widgets.dart';
@@ -22,6 +23,7 @@ class ReportsScreen extends StatefulWidget {
 
 class _ReportsScreenState extends State<ReportsScreen> {
   PersonalReport? _report;
+  PersonalReport? _expenseOnly;
   List<BillModel> _paidBills = const [];
   bool _loading = true;
   DateTime _from = DateTime(DateTime.now().year, DateTime.now().month, 1);
@@ -36,13 +38,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
   String _fmt(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-  DateTime? _parseBillDate(String raw) {
-    final dt = DateTime.tryParse(raw);
-    if (dt != null) return dt.toLocal();
-    if (raw.length >= 10) {
-      return DateTime.tryParse(raw.substring(0, 10));
+  Future<List<BillModel>> _loadBillPayments() async {
+    try {
+      return await BillsController.instance.loadBills();
+    } catch (_) {
+      return BillsController.instance.loadBills(status: 'paid');
     }
-    return null;
   }
 
   Future<void> _load() async {
@@ -52,23 +53,18 @@ class _ReportsScreenState extends State<ReportsScreen> {
         from: _fmt(_from),
         to: _fmt(_to),
       );
-      // Backend personal report is expense-only; bills come from /bills.
-      final bills = await BillsController.instance.loadBills(status: 'paid');
-      final paid = bills.where((b) {
-        final paidAmt = b.amountPaid > 0 ? b.amountPaid : b.amount;
-        if (b.status != 'paid' && paidAmt <= 0) return false;
-        final d = _parseBillDate(b.dueDate);
-        if (d == null) return true;
-        // Paid bills may have a due date later in the month than "today".
-        final fromMonth = DateTime(_from.year, _from.month, 1);
-        final toMonthEnd = DateTime(_to.year, _to.month + 1, 0);
-        final due = DateTime(d.year, d.month, d.day);
-        return !due.isBefore(fromMonth) && !due.isAfter(toMonthEnd);
-      }).toList();
+      final allBills = await _loadBillPayments();
+      final paid = SpendingTotals.paidInRange(
+        allBills,
+        from: _from,
+        to: _to,
+      );
+      final merged = SpendingTotals.mergePersonal(report, paid);
 
       if (!mounted) return;
       setState(() {
-        _report = report;
+        _expenseOnly = report;
+        _report = merged;
         _paidBills = paid;
       });
     } on ApiException catch (e) {
@@ -79,26 +75,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
-  double get _billsPaidTotal => _paidBills.fold<double>(
-        0,
-        (s, b) => s + (b.amountPaid > 0 ? b.amountPaid : b.amount),
-      );
-
-  List<ReportBucket> get _billsByGroup {
-    final map = <String, double>{};
-    for (final b in _paidBills) {
-      final key = (b.groupName?.trim().isNotEmpty == true)
-          ? b.groupName!.trim()
-          : 'Group ${b.groupId}';
-      final amt = b.amountPaid > 0 ? b.amountPaid : b.amount;
-      map[key] = (map[key] ?? 0) + amt;
-    }
-    final buckets = map.entries
-        .map((e) => ReportBucket(label: e.key, amount: e.value))
-        .toList()
-      ..sort((a, b) => b.amount.compareTo(a.amount));
-    return buckets;
-  }
+  double get _billsPaidTotal => SpendingTotals.sumPaid(_paidBills);
 
   Future<void> _pickFrom() async {
     final d = await showDatePicker(
@@ -227,6 +204,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 ReportSummaryTile(
                   totalSpent: r.totalSpent,
                   totalOwed: r.totalOwed,
+                  expensesOnly: _expenseOnly?.totalSpent ?? 0,
                   billsPaid: _billsPaidTotal,
                   subtitle: '${r.from ?? _fmt(_from)} → ${r.to ?? _fmt(_to)}',
                 ),
@@ -242,10 +220,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       style: GoogleFonts.manrope(color: AppColors.textMuted),
                     ),
                   )
-                else ...[
-                  ReportBucketList(items: _billsByGroup, positive: false),
+                else
                   ..._paidBills.map((b) {
-                    final amt = b.amountPaid > 0 ? b.amountPaid : b.amount;
+                    final amt = SpendingTotals.paidAmount(b);
                     return SoftTile(
                       child: Row(
                         children: [
@@ -275,12 +252,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       ),
                     );
                   }),
-                ],
-                const SectionLabel('Expenses by category'),
+                const SectionLabel('By category'),
                 ReportBucketList(items: r.byCategory, positive: false),
-                const SectionLabel('Expenses by month'),
+                const SectionLabel('By month'),
                 ReportBucketList(items: r.byMonth, positive: false),
-                const SectionLabel('Expenses by group'),
+                const SectionLabel('By group'),
                 ReportBucketList(items: r.byGroup, positive: false),
                 const SectionLabel('Balance trend'),
                 ReportBucketList(items: r.balanceTrend, positive: true),

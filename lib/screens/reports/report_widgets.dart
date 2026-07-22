@@ -70,17 +70,25 @@ class ReportSummaryTile extends StatelessWidget {
     super.key,
     required this.totalSpent,
     required this.totalOwed,
+    this.expensesOnly,
     this.billsPaid = 0,
     this.subtitle,
   });
 
+  /// Combined spending (expenses + bills paid).
   final double totalSpent;
   final double totalOwed;
+
+  /// Expense-only portion when bills are merged into [totalSpent].
+  final double? expensesOnly;
   final double billsPaid;
   final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
+    final expenses = expensesOnly ?? (totalSpent - billsPaid);
+    final showBreakdown = billsPaid > 0 || expensesOnly != null;
+
     return SoftTile(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -102,7 +110,7 @@ class ReportSummaryTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Expenses',
+                      'Total spent',
                       style: GoogleFonts.manrope(
                         color: AppColors.textSecondary,
                         fontSize: 12,
@@ -110,22 +118,6 @@ class ReportSummaryTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     MoneyText(totalSpent, positive: false, size: 22),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Bills paid',
-                      style: GoogleFonts.manrope(
-                        color: AppColors.textSecondary,
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    MoneyText(billsPaid, positive: false, size: 22),
                   ],
                 ),
               ),
@@ -147,6 +139,33 @@ class ReportSummaryTile extends StatelessWidget {
               ),
             ],
           ),
+          if (showBreakdown) ...[
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Expenses  \$${expenses.toStringAsFixed(2)}',
+                    style: GoogleFonts.manrope(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.forestSoft,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    'Bills paid  \$${billsPaid.toStringAsFixed(2)}',
+                    style: GoogleFonts.manrope(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.forestSoft,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

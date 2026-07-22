@@ -109,3 +109,49 @@ class InviteLinkResult {
     );
   }
 }
+
+/// Result of POST /groups/{id}/invite or /invite-phone.
+class InviteMembersResult {
+  const InviteMembersResult({
+    this.added = const [],
+    this.notFound = const [],
+    this.alreadyMembers = const [],
+    this.message,
+  });
+
+  final List<String> added;
+  final List<String> notFound;
+  final List<String> alreadyMembers;
+  final String? message;
+
+  int get addedCount => added.length;
+
+  factory InviteMembersResult.fromJson(Map<String, dynamic> json) {
+    List<String> asStrings(dynamic raw) {
+      if (raw is! List) return const [];
+      return raw.map((e) {
+        if (e is Map) {
+          return (e['email'] ?? e['phone'] ?? e['name'] ?? e['id'] ?? e)
+              .toString();
+        }
+        return e.toString();
+      }).toList();
+    }
+
+    return InviteMembersResult(
+      added: asStrings(json['added']),
+      notFound: asStrings(json['not_found']),
+      alreadyMembers: asStrings(json['already_members']),
+      message: json['message']?.toString(),
+    );
+  }
+
+  InviteMembersResult merge(InviteMembersResult other) {
+    return InviteMembersResult(
+      added: [...added, ...other.added],
+      notFound: [...notFound, ...other.notFound],
+      alreadyMembers: [...alreadyMembers, ...other.alreadyMembers],
+      message: other.message ?? message,
+    );
+  }
+}

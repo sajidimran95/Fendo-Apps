@@ -98,11 +98,37 @@ class GroupsApi {
   }
 
   /// 3.9 POST /groups/{id}/invite
-  Future<void> inviteByEmail(int id, {required List<String> emails}) async {
-    await _client.post(
+  Future<InviteMembersResult> inviteByEmail(
+    int id, {
+    required List<String> emails,
+  }) async {
+    final res = await _client.post(
       '/groups/$id/invite',
       data: {'emails': emails},
     );
+    final map = unwrapMap(res.data);
+    return InviteMembersResult.fromJson({
+      ...map,
+      if (res.data is Map && (res.data as Map)['message'] != null)
+        'message': (res.data as Map)['message'],
+    });
+  }
+
+  /// POST /groups/{id}/invite-phone — add registered users by phone.
+  Future<InviteMembersResult> inviteByPhone(
+    int id, {
+    required List<String> phones,
+  }) async {
+    final res = await _client.post(
+      '/groups/$id/invite-phone',
+      data: {'phones': phones},
+    );
+    final map = unwrapMap(res.data);
+    return InviteMembersResult.fromJson({
+      ...map,
+      if (res.data is Map && (res.data as Map)['message'] != null)
+        'message': (res.data as Map)['message'],
+    });
   }
 
   /// 3.10 POST /groups/join/{token}

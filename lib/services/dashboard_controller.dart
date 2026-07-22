@@ -4,7 +4,9 @@ import '../core/config/api_config.dart';
 import '../core/network/api_exception.dart';
 import '../models/dashboard_model.dart';
 import 'auth_controller.dart';
+import 'bills_controller.dart';
 import 'dashboard_api.dart';
+import 'spending_totals.dart';
 
 class DashboardController extends ChangeNotifier {
   DashboardController._();
@@ -16,10 +18,20 @@ class DashboardController extends ChangeNotifier {
   DashboardSummary? _summary;
   bool _loading = false;
   String? _error;
+  double _billsPaidThisMonth = 0;
 
   DashboardSummary? get summary => _summary;
   bool get loading => _loading;
   String? get error => _error;
+
+  /// Expenses this month from dashboard API (before bills).
+  double get expensesThisMonth =>
+      _summary?.quickStats.expensesThisMonth ?? 0;
+
+  double get billsPaidThisMonth => _billsPaidThisMonth;
+
+  /// Expenses + bill payments for the current month.
+  double get spendingThisMonth => expensesThisMonth + _billsPaidThisMonth;
 
   Future<void> load({bool force = false}) async {
     if (_loading) return;
@@ -43,8 +55,10 @@ class DashboardController extends ChangeNotifier {
             upcomingBillsCount: 2,
           ),
         );
+        _billsPaidThisMonth = 45;
       } else {
         _summary = await _api.getDashboard();
+        await _loadBillsPaidThisMonth();
       }
     } on ApiException catch (e) {
       _error = e.displayMessage;
@@ -56,9 +70,25 @@ class DashboardController extends ChangeNotifier {
     }
   }
 
+  Future<void> _loadBillsPaidThisMonth() async {
+    try {
+      final now = DateTime.now();
+      final bills = await BillsController.instance.loadBills();
+      final paid = SpendingTotals.paidInRange(
+        bills,
+        from: DateTime(now.year, now.month, 1),
+        to: now,
+      );
+      _billsPaidThisMonth = SpendingTotals.sumPaid(paid);
+    } catch (_) {
+      _billsPaidThisMonth = 0;
+    }
+  }
+
   void clear() {
     _summary = null;
     _error = null;
+    _billsPaidThisMonth = 0;
     notifyListeners();
   }
 }

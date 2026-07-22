@@ -4,12 +4,40 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../models/contact_match_model.dart';
 import '../../services/loans_controller.dart';
 import '../../theme/app_colors.dart';
+import '../../utils/api_feedback.dart';
 import '../../widgets/auth/auth_widgets.dart';
 import '../../widgets/common/app_widgets.dart';
 import 'create_loan_screen.dart';
 
-class LoansScreen extends StatelessWidget {
+class LoansScreen extends StatefulWidget {
   const LoansScreen({super.key});
+
+  @override
+  State<LoansScreen> createState() => _LoansScreenState();
+}
+
+class _LoansScreenState extends State<LoansScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load({bool force = false}) async {
+    try {
+      await LoansController.instance.load(force: force);
+    } catch (e) {
+      if (!mounted) return;
+      showApiError(context, e);
+    }
+  }
+
+  Future<void> _openCreate() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const CreateLoanScreen()),
+    );
+    await _load(force: true);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,13 +54,7 @@ class LoansScreen extends StatelessWidget {
                 onBack: () => Navigator.pop(context),
                 trailing: IconButton(
                   tooltip: 'New loan',
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const CreateLoanScreen(),
-                      ),
-                    );
-                  },
+                  onPressed: _openCreate,
                   icon: const Icon(Icons.add_rounded),
                   color: AppColors.forest,
                 ),
@@ -43,93 +65,101 @@ class LoansScreen extends StatelessWidget {
                   builder: (context, _) {
                     final ctrl = LoansController.instance;
                     final loans = ctrl.loans;
-                    return ListView(
-                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _SummaryCard(
-                                label: 'You lent',
-                                amount: ctrl.youLent,
-                                positive: true,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _SummaryCard(
-                                label: 'You borrowed',
-                                amount: ctrl.youBorrowed,
-                                positive: false,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: AppColors.border.withValues(alpha: 0.7),
-                            ),
-                          ),
-                          child: Row(
+                    if (ctrl.loading && loans.isEmpty) {
+                      return const Center(
+                        child: CircularProgressIndicator(color: AppColors.mint),
+                      );
+                    }
+                    return RefreshIndicator(
+                      color: AppColors.mint,
+                      onRefresh: () => _load(force: true),
+                      child: ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                        children: [
+                          Row(
                             children: [
-                              Text(
-                                'Net balance',
-                                style: GoogleFonts.manrope(
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.forestSoft,
+                              Expanded(
+                                child: _SummaryCard(
+                                  label: 'You lent',
+                                  amount: ctrl.youLent,
+                                  positive: true,
                                 ),
                               ),
-                              const Spacer(),
-                              MoneyText(
-                                ctrl.netBalance,
-                                positive: ctrl.netBalance >= 0,
-                                size: 20,
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _SummaryCard(
+                                  label: 'You borrowed',
+                                  amount: ctrl.youBorrowed,
+                                  positive: false,
+                                ),
                               ),
                             ],
                           ),
-                        ),
-                        const SizedBox(height: 18),
-                        Text(
-                          'All loans (${ctrl.activeCount})',
-                          style: GoogleFonts.sora(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.forest,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        if (loans.isEmpty)
-                          Text(
-                            'No loans yet',
-                            style: GoogleFonts.manrope(
-                              color: AppColors.textMuted,
-                            ),
-                          )
-                        else
-                          ...loans.map(
-                            (l) => Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: _LoanTile(loan: l),
-                            ),
-                          ),
-                        const SizedBox(height: 8),
-                        AuthPrimaryButton(
-                          label: 'Create loan',
-                          onPressed: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const CreateLoanScreen(),
+                          const SizedBox(height: 10),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: AppColors.surface,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color:
+                                    AppColors.border.withValues(alpha: 0.7),
                               ),
-                            );
-                          },
-                        ),
-                      ],
+                            ),
+                            child: Row(
+                              children: [
+                                Text(
+                                  'Net balance',
+                                  style: GoogleFonts.manrope(
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.forestSoft,
+                                  ),
+                                ),
+                                const Spacer(),
+                                MoneyText(
+                                  ctrl.netBalance,
+                                  positive: ctrl.netBalance >= 0,
+                                  size: 20,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          Text(
+                            'All loans (${ctrl.activeCount})',
+                            style: GoogleFonts.sora(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                              color: AppColors.forest,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          if (loans.isEmpty)
+                            SoftTile(
+                              margin: EdgeInsets.zero,
+                              child: Text(
+                                'No loans yet. Tap + to lend or borrow with an On Fendo contact.',
+                                style: GoogleFonts.manrope(
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            )
+                          else
+                            ...loans.map(
+                              (l) => Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: _LoanTile(loan: l),
+                              ),
+                            ),
+                          const SizedBox(height: 8),
+                          AuthPrimaryButton(
+                            label: 'Create loan',
+                            onPressed: _openCreate,
+                          ),
+                        ],
+                      ),
                     );
                   },
                 ),

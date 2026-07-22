@@ -263,9 +263,13 @@ class GroupsController extends ChangeNotifier {
     return _api.createInviteLink(id);
   }
 
-  Future<void> inviteByEmail(int id, {required List<String> emails}) async {
+  Future<InviteMembersResult> inviteByEmail(
+    int id, {
+    required List<String> emails,
+  }) async {
     if (ApiConfig.demoAuth) {
       final list = _members.putIfAbsent(id, () => []);
+      final added = <String>[];
       for (final e in emails) {
         if (list.any((m) => m.email == e)) continue;
         list.add(
@@ -275,15 +279,60 @@ class GroupsController extends ChangeNotifier {
             email: e,
           ),
         );
+        added.add(e);
       }
       final gi = _groups.indexWhere((g) => g.id == id);
       if (gi >= 0) {
         _groups[gi] = _groups[gi].copyWith(memberCount: list.length);
       }
       notifyListeners();
-      return;
+      return InviteMembersResult(added: added);
     }
-    await _api.inviteByEmail(id, emails: emails);
+    return _api.inviteByEmail(id, emails: emails);
+  }
+
+  Future<InviteMembersResult> inviteByPhone(
+    int id, {
+    required List<String> phones,
+  }) async {
+    if (ApiConfig.demoAuth) {
+      final list = _members.putIfAbsent(id, () => []);
+      final added = <String>[];
+      for (final p in phones) {
+        if (list.any((m) => m.email == p)) continue;
+        list.add(
+          GroupMember(
+            userId: _nextId++,
+            name: p,
+            email: '',
+          ),
+        );
+        added.add(p);
+      }
+      final gi = _groups.indexWhere((g) => g.id == id);
+      if (gi >= 0) {
+        _groups[gi] = _groups[gi].copyWith(memberCount: list.length);
+      }
+      notifyListeners();
+      return InviteMembersResult(added: added);
+    }
+    return _api.inviteByPhone(id, phones: phones);
+  }
+
+  /// Invite selected contacts via email and/or phone (Postman v1.0.3).
+  Future<InviteMembersResult> inviteContacts(
+    int id, {
+    List<String> emails = const [],
+    List<String> phones = const [],
+  }) async {
+    var result = const InviteMembersResult();
+    if (emails.isNotEmpty) {
+      result = result.merge(await inviteByEmail(id, emails: emails));
+    }
+    if (phones.isNotEmpty) {
+      result = result.merge(await inviteByPhone(id, phones: phones));
+    }
+    return result;
   }
 
   Future<GroupModel> joinByToken(String token) async {

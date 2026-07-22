@@ -154,6 +154,23 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
     return emails.toList();
   }
 
+  List<String> get _contactPhones {
+    final phones = <String>{};
+    for (final c in _contacts) {
+      if (!_selectedLocalIds.contains(c.localId)) continue;
+      // Prefer matched Fendo user phone when present.
+      final fromUser = c.user?.phone?.trim();
+      if (fromUser != null && fromUser.isNotEmpty) {
+        phones.add(fromUser);
+      }
+      for (final p in c.phones) {
+        final t = p.trim();
+        if (t.isNotEmpty) phones.add(t);
+      }
+    }
+    return phones.toList();
+  }
+
   List<String> get _allInviteEmails {
     final set = <String>{..._manualEmails, ..._contactEmails};
     return set.toList();
@@ -171,23 +188,40 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
 
   Future<void> _sendInvites() async {
     final emails = _allInviteEmails;
-    if (emails.isEmpty) {
+    final phones = _contactPhones;
+    if (emails.isEmpty && phones.isEmpty) {
       showApiError(
         context,
         ApiException(
-          message: 'Select contacts with email or type emails below',
+          message: 'Select contacts (email or phone) or type emails below',
         ),
       );
       return;
     }
     setState(() => _sending = true);
     try {
-      await GroupsController.instance.inviteByEmail(
+      final result = await GroupsController.instance.inviteContacts(
         widget.groupId,
         emails: emails,
+        phones: phones,
       );
       if (!mounted) return;
-      showApiMessage(context, 'Invites sent to ${emails.length} people');
+      final parts = <String>[];
+      if (result.addedCount > 0) {
+        parts.add('${result.addedCount} added');
+      }
+      if (result.alreadyMembers.isNotEmpty) {
+        parts.add('${result.alreadyMembers.length} already members');
+      }
+      if (result.notFound.isNotEmpty) {
+        parts.add('${result.notFound.length} not on Fendo');
+      }
+      showApiMessage(
+        context,
+        parts.isEmpty
+            ? (result.message ?? 'Invite finished')
+            : parts.join(' · '),
+      );
       setState(() {
         _emails.clear();
         _selectedLocalIds.clear();
@@ -343,7 +377,7 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'API invites by email only. Pick contacts that have an email, or On Fendo users.',
+                      'API matches contacts on Fendo by email or phone.',
                       style: GoogleFonts.manrope(
                         fontSize: 12,
                         color: AppColors.textMuted,
@@ -473,6 +507,8 @@ class _InviteContactTile extends StatelessWidget {
     final subtitle = email ?? phone ?? '';
     final initial = display.isNotEmpty ? display[0].toUpperCase() : '?';
     final hasEmail = email != null && email.contains('@');
+    final hasPhone = phone != null && phone.trim().isNotEmpty;
+    final canInvite = hasEmail || hasPhone || onApp;
 
     return Material(
       color: AppColors.surface,
@@ -524,18 +560,26 @@ class _InviteContactTile extends StatelessWidget {
                         subtitle,
                         style: GoogleFonts.manrope(
                           fontSize: 12,
-                          color: hasEmail
+                          color: canInvite
                               ? AppColors.textMuted
                               : AppColors.coral,
                         ),
                       ),
                     ],
-                    if (!hasEmail)
+                    if (!canInvite)
                       Text(
-                        'No email — add manually to invite',
+                        'Needs email or phone to invite',
                         style: GoogleFonts.manrope(
                           fontSize: 11,
                           color: AppColors.coral,
+                        ),
+                      )
+                    else if (!hasEmail && hasPhone)
+                      Text(
+                        'Invite by phone',
+                        style: GoogleFonts.manrope(
+                          fontSize: 11,
+                          color: AppColors.mintDim,
                         ),
                       ),
                   ],

@@ -137,7 +137,7 @@ class ExpensesController extends ChangeNotifier {
     required double amount,
     required String currency,
     required String expenseDate,
-    required int groupId,
+    int? groupId,
     String? groupName,
     int? categoryId,
     String? categoryName,
@@ -152,18 +152,20 @@ class ExpensesController extends ChangeNotifier {
       _seedDemoIfNeeded();
       final groups = GroupsController.instance.groups;
       final gName = groupName ??
-          groups
-              .where((g) => g.id == groupId)
-              .map((g) => g.name)
-              .firstOrNull;
+          (groupId == null
+              ? null
+              : groups
+                  .where((g) => g.id == groupId)
+                  .map((g) => g.name)
+                  .firstOrNull);
       final expense = ExpenseModel(
         id: _nextId++,
         title: title,
         amount: amount,
         currency: currency,
         expenseDate: expenseDate,
-        groupId: groupId,
-        groupName: gName ?? 'Group $groupId',
+        groupId: groupId ?? 0,
+        groupName: gName ?? (groupId == null ? 'Personal' : 'Group $groupId'),
         categoryId: categoryId,
         categoryName: categoryName,
         splitMethod: splitMethod,
@@ -184,6 +186,7 @@ class ExpensesController extends ChangeNotifier {
       expenseDate: expenseDate,
       groupId: groupId,
       categoryId: categoryId,
+      merchantName: merchantName,
       splitMethod: splitMethod,
       payers: payers,
       participants: participants,

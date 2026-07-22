@@ -56,6 +56,7 @@ class ExpenseParticipant {
     final user = json['user'] is Map
         ? Map<String, dynamic>.from(json['user'] as Map)
         : null;
+    final owed = json['amount'] ?? json['amount_owed'];
     return ExpenseParticipant(
       userId: ExpensePayer._asInt(json['user_id'] ?? user?['id'] ?? json['id']),
       name: user?['name']?.toString() ?? json['name']?.toString(),
@@ -65,9 +66,7 @@ class ExpenseParticipant {
       shares: json['shares'] == null
           ? null
           : ExpensePayer._asDouble(json['shares']),
-      amount: json['amount'] == null
-          ? null
-          : ExpensePayer._asDouble(json['amount']),
+      amount: owed == null ? null : ExpensePayer._asDouble(owed),
     );
   }
 
@@ -204,7 +203,9 @@ class ExpenseModel {
           category?['name']?.toString() ?? json['category_name']?.toString(),
       splitMethod: (json['split_method'] ?? 'equal').toString(),
       payers: parsePayers(json['payers']),
-      participants: parseParts(json['participants']),
+      participants: parseParts(
+        json['participants'] ?? json['splits'] ?? json['expense_splits'],
+      ),
       items: parseItems(json['items']),
       isMultiPayer: json['is_multi_payer'] == true,
       merchantName: json['merchant_name']?.toString(),

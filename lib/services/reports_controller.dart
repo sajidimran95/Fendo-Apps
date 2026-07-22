@@ -5,7 +5,9 @@ import 'package:flutter/foundation.dart';
 import '../core/config/api_config.dart';
 import '../models/report_model.dart';
 import 'auth_controller.dart';
+import 'bills_controller.dart';
 import 'reports_api.dart';
+import 'spending_totals.dart';
 
 class ReportsController extends ChangeNotifier {
   ReportsController._();
@@ -106,60 +108,81 @@ class ReportsController extends ChangeNotifier {
     return _group!;
   }
 
-  Future<ReportExport> export({String format = 'csv'}) async {
-    if (ApiConfig.demoAuth) {
-      final personal = _personal ?? _demoPersonal();
-      if (format == 'json') {
-        final payload = {
-          'total_spent': personal.totalSpent,
-          'total_owed': personal.totalOwed,
-          'from': personal.from,
-          'to': personal.to,
-          'by_category': personal.byCategory
-              .map((e) => {'label': e.label, 'amount': e.amount})
-              .toList(),
-          'by_month': personal.byMonth
-              .map((e) => {'label': e.label, 'amount': e.amount})
-              .toList(),
-          'by_group': personal.byGroup
-              .map((e) => {'label': e.label, 'amount': e.amount})
-              .toList(),
-          'balance_trend': personal.balanceTrend
-              .map((e) => {'label': e.label, 'amount': e.amount})
-              .toList(),
-        };
-        _lastExport = ReportExport(
-          format: 'json',
-          content: const JsonEncoder.withIndent('  ').convert(payload),
-          filename: 'fendo-report.json',
-        );
-      } else {
-        final buf = StringBuffer()
-          ..writeln('section,label,amount')
-          ..writeln('summary,total_spent,${personal.totalSpent}')
-          ..writeln('summary,total_owed,${personal.totalOwed}');
-        for (final b in personal.byCategory) {
-          buf.writeln('by_category,${b.label},${b.amount}');
-        }
-        for (final b in personal.byMonth) {
-          buf.writeln('by_month,${b.label},${b.amount}');
-        }
-        for (final b in personal.byGroup) {
-          buf.writeln('by_group,${b.label},${b.amount}');
-        }
-        for (final b in personal.balanceTrend) {
-          buf.writeln('balance_trend,${b.label},${b.amount}');
-        }
-        _lastExport = ReportExport(
-          format: 'csv',
-          content: buf.toString(),
-          filename: 'fendo-report.csv',
-        );
-      }
+  /// Personal report with paid bills folded into totals and buckets.
+  Future<PersonalReport> loadPersonalWithBills({
+    String? from,
+    String? to,
+  }) async {
+    final report = await loadPersonal(from: from, to: to);
+    try {
+      final bills = await BillsController.instance.loadBills();
+      final paid = SpendingTotals.paidInRange(
+        bills,
+        from: from == null ? null : DateTime.tryParse(from),
+        to: to == null ? null : DateTime.tryParse(to),
+      );
+      final merged = SpendingTotals.mergePersonal(report, paid);
+      _personal = merged;
       notifyListeners();
-      return _lastExport!;
+      return merged;
+    } catch (_) {
+      return report;
     }
-    _lastExport = await _api.exportReport(format: format);
+  }
+
+  Future<ReportExport> export({String format = 'csv'}) async {
+    // Client-merge so exports include bill payments (API export is expense-only).
+    final personal = await loadPersonalWithBills(
+      from: _personal?.from,
+      to: _personal?.to,
+    );
+    if (format == 'json') {
+      final payload = {
+        'total_spent': personal.totalSpent,
+        'total_owed': personal.totalOwed,
+        'from': personal.from,
+        'to': personal.to,
+        'by_category': personal.byCategory
+            .map((e) => {'label': e.label, 'amount': e.amount})
+            .toList(),
+        'by_month': personal.byMonth
+            .map((e) => {'label': e.label, 'amount': e.amount})
+            .toList(),
+        'by_group': personal.byGroup
+            .map((e) => {'label': e.label, 'amount': e.amount})
+            .toList(),
+        'balance_trend': personal.balanceTrend
+            .map((e) => {'label': e.label, 'amount': e.amount})
+            .toList(),
+      };
+      _lastExport = ReportExport(
+        format: 'json',
+        content: const JsonEncoder.withIndent('  ').convert(payload),
+        filename: 'fendo-report.json',
+      );
+    } else {
+      final buf = StringBuffer()
+        ..writeln('section,label,amount')
+        ..writeln('summary,total_spent,${personal.totalSpent}')
+        ..writeln('summary,total_owed,${personal.totalOwed}');
+      for (final b in personal.byCategory) {
+        buf.writeln('by_category,${b.label},${b.amount}');
+      }
+      for (final b in personal.byMonth) {
+        buf.writeln('by_month,${b.label},${b.amount}');
+      }
+      for (final b in personal.byGroup) {
+        buf.writeln('by_group,${b.label},${b.amount}');
+      }
+      for (final b in personal.balanceTrend) {
+        buf.writeln('balance_trend,${b.label},${b.amount}');
+      }
+      _lastExport = ReportExport(
+        format: 'csv',
+        content: buf.toString(),
+        filename: 'fendo-report.csv',
+      );
+    }
     notifyListeners();
     return _lastExport!;
   }

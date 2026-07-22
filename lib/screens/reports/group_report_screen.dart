@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../models/bill_model.dart';
 import '../../models/group_model.dart';
 import '../../models/report_model.dart';
+import '../../services/bills_controller.dart';
 import '../../services/groups_controller.dart';
 import '../../services/reports_controller.dart';
+import '../../services/spending_totals.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
 import '../../widgets/common/app_widgets.dart';
@@ -24,6 +27,8 @@ class _GroupReportScreenState extends State<GroupReportScreen> {
   List<GroupModel> _groups = const [];
   GroupModel? _group;
   GroupReport? _report;
+  double _expensesOnly = 0;
+  double _billsPaid = 0;
   bool _booting = true;
   bool _loading = false;
 
@@ -54,8 +59,20 @@ class _GroupReportScreenState extends State<GroupReportScreen> {
         group.id,
         groupName: group.name,
       );
+      List<BillModel> bills = const [];
+      try {
+        bills = await BillsController.instance.loadBills();
+      } catch (_) {
+        bills = await BillsController.instance.loadBills(status: 'paid');
+      }
+      final paid = SpendingTotals.paidInRange(bills, groupId: group.id);
+      final merged = SpendingTotals.mergeGroup(report, paid);
       if (!mounted) return;
-      setState(() => _report = report);
+      setState(() {
+        _expensesOnly = report.totalSpent;
+        _billsPaid = SpendingTotals.sumPaid(paid);
+        _report = merged;
+      });
     } on ApiException catch (e) {
       if (!mounted) return;
       showApiError(context, e);
@@ -137,6 +154,8 @@ class _GroupReportScreenState extends State<GroupReportScreen> {
                 ReportSummaryTile(
                   totalSpent: r.totalSpent,
                   totalOwed: r.totalOwed,
+                  expensesOnly: _expensesOnly,
+                  billsPaid: _billsPaid,
                   subtitle: r.groupName,
                 ),
                 const SectionLabel('By category'),

@@ -39,13 +39,16 @@ class ExpensesApi {
   }
 
   /// 4.2 POST /expenses
+  ///
+  /// [groupId] may be omitted for personal expenses (e.g. lend loans).
   Future<ExpenseModel> createExpense({
     required String title,
     required double amount,
     required String currency,
     required String expenseDate,
-    required int groupId,
+    int? groupId,
     int? categoryId,
+    String? merchantName,
     required String splitMethod,
     required List<ExpensePayer> payers,
     required List<ExpenseParticipant> participants,
@@ -59,8 +62,10 @@ class ExpensesApi {
         'amount': amount,
         'currency': currency,
         'expense_date': expenseDate,
-        'group_id': groupId,
+        if (groupId != null) 'group_id': groupId,
         if (categoryId != null) 'category_id': categoryId,
+        if (merchantName != null && merchantName.isNotEmpty)
+          'merchant_name': merchantName,
         'split_method': splitMethod,
         'payers': payers.map((e) => e.toJson()).toList(),
         'participants': participants.map((e) => e.toJson()).toList(),
