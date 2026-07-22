@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../models/category_model.dart';
 import '../../models/expense_model.dart';
 import '../../models/group_member.dart';
 import '../../models/group_model.dart';
@@ -27,10 +28,10 @@ class CreateExpenseScreen extends StatefulWidget {
 class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   final _title = TextEditingController();
   final _amount = TextEditingController();
-  final _categoryId = TextEditingController();
   DateTime _date = DateTime.now();
   String _split = 'equal';
   String _currencyCode = 'USD';
+  int? _categoryId;
   bool _loading = false;
   bool _scanning = false;
   bool _booting = true;
@@ -38,6 +39,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   List<GroupModel> _groups = const [];
   GroupModel? _group;
   List<GroupMember> _members = const [];
+  List<CategoryModel> _categories = const [];
   final Set<int> _selectedParticipants = {};
   final Map<int, TextEditingController> _pct = {};
   final Map<int, TextEditingController> _shares = {};
@@ -98,10 +100,29 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       final groups = GroupsController.instance.groups;
       final selected = GroupsController.instance.groupById(widget.initialGroupId) ??
           (groups.isNotEmpty ? groups.first : null);
+      List<CategoryModel> categories = const [];
+      try {
+        categories = await AuthController.instance.categoriesApi.listCategories();
+      } catch (_) {
+        categories = const [
+          CategoryModel(id: 1, name: 'Food & Drink'),
+          CategoryModel(id: 2, name: 'Transport'),
+          CategoryModel(id: 3, name: 'Accommodation'),
+          CategoryModel(id: 4, name: 'Entertainment'),
+          CategoryModel(id: 5, name: 'Shopping'),
+          CategoryModel(id: 6, name: 'Utilities'),
+          CategoryModel(id: 7, name: 'Health'),
+          CategoryModel(id: 8, name: 'Groceries'),
+          CategoryModel(id: 9, name: 'Education'),
+          CategoryModel(id: 10, name: 'Other'),
+        ];
+      }
       setState(() {
         _groups = groups;
         _group = selected;
         _currencyCode = _currencyFor(selected);
+        _categories = categories;
+        _categoryId = null;
       });
       if (selected != null) await _loadMembers(selected.id);
     } finally {
@@ -148,7 +169,6 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   void dispose() {
     _title.dispose();
     _amount.dispose();
-    _categoryId.dispose();
     for (final c in _pct.values) {
       c.dispose();
     }
@@ -371,7 +391,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
         expenseDate: _dateStr,
         groupId: _group!.id,
         groupName: _group!.name,
-        categoryId: int.tryParse(_categoryId.text.trim()),
+        categoryId: _categoryId,
         splitMethod: _split,
         payers: payers,
         participants: participants,
@@ -538,12 +558,34 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                     ],
                   ),
                   const SizedBox(height: 14),
-                  AuthTextField(
-                    controller: _categoryId,
-                    label: 'Category ID',
-                    hint: 'optional',
-                    keyboardType: TextInputType.number,
-                  ),
+                  const _FieldLabel('Category'),
+                  const SizedBox(height: 8),
+                  if (_categories.isEmpty)
+                    Text(
+                      'No categories available',
+                      style: GoogleFonts.manrope(color: AppColors.textMuted),
+                    )
+                  else
+                    DropdownButtonFormField<int?>(
+                      key: ValueKey('category-$_categoryId'),
+                      initialValue: _categoryId,
+                      items: [
+                        const DropdownMenuItem<int?>(
+                          value: null,
+                          child: Text('None'),
+                        ),
+                        ..._categories.map(
+                          (c) => DropdownMenuItem<int?>(
+                            value: c.id,
+                            child: Text(c.name),
+                          ),
+                        ),
+                      ],
+                      onChanged: (id) => setState(() => _categoryId = id),
+                      decoration: const InputDecoration(
+                        hintText: 'optional',
+                      ),
+                    ),
                   const SizedBox(height: 14),
                   ListTile(
                     contentPadding: EdgeInsets.zero,

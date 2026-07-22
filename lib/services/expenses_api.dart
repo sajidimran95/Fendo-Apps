@@ -51,7 +51,6 @@ class ExpensesApi {
     required List<ExpenseParticipant> participants,
     List<ExpenseItem> items = const [],
     bool isMultiPayer = false,
-    String? merchantName,
   }) async {
     final res = await _client.post(
       '/expenses',
@@ -67,8 +66,6 @@ class ExpensesApi {
         'participants': participants.map((e) => e.toJson()).toList(),
         if (items.isNotEmpty) 'items': items.map((e) => e.toJson()).toList(),
         'is_multi_payer': isMultiPayer,
-        if (merchantName != null && merchantName.isNotEmpty)
-          'merchant_name': merchantName,
       },
     );
     return _parseExpense(res.data);

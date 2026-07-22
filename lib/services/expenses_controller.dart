@@ -189,7 +189,6 @@ class ExpensesController extends ChangeNotifier {
       participants: participants,
       items: items,
       isMultiPayer: isMultiPayer,
-      merchantName: merchantName,
     );
     _expenses.insert(0, expense);
     notifyListeners();

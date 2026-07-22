@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../services/auth_controller.dart';
 import '../../services/groups_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
@@ -17,7 +18,7 @@ class CreateGroupScreen extends StatefulWidget {
 
 class _CreateGroupScreenState extends State<CreateGroupScreen> {
   final _name = TextEditingController();
-  final _currency = TextEditingController(text: 'USD');
+  late final TextEditingController _currency;
   final _emails = TextEditingController();
   String _type = 'friends';
   bool _simplify = true;
@@ -32,6 +33,15 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     'business',
     'other',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    final c = AuthController.instance.user?.currency.trim() ?? '';
+    _currency = TextEditingController(
+      text: c.isEmpty ? 'USD' : c.toUpperCase(),
+    );
+  }
 
   @override
   void dispose() {

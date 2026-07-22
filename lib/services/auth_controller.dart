@@ -9,6 +9,7 @@ import 'activity_api.dart';
 import 'auth_api.dart';
 import 'balances_api.dart';
 import 'bills_api.dart';
+import 'categories_api.dart';
 import 'expenses_api.dart';
 import 'groups_api.dart';
 import 'notifications_api.dart';
@@ -39,6 +40,7 @@ class AuthController extends ChangeNotifier {
   late final ActivityApi _activityApi = ActivityApi(_client);
   late final NotificationsApi _notificationsApi = NotificationsApi(_client);
   late final ReportsApi _reportsApi = ReportsApi(_client);
+  late final CategoriesApi _categoriesApi = CategoriesApi(_client);
 
   AuthApi get api => _api;
   UserApi get userApi => _userApi;
@@ -50,6 +52,7 @@ class AuthController extends ChangeNotifier {
   ActivityApi get activityApi => _activityApi;
   NotificationsApi get notificationsApi => _notificationsApi;
   ReportsApi get reportsApi => _reportsApi;
+  CategoriesApi get categoriesApi => _categoriesApi;
   ApiClient get client => _client;
 
   UserModel? _user;
@@ -166,6 +169,62 @@ class AuthController extends ChangeNotifier {
       tokenType: res.tokenType,
     );
     return res.user;
+  }
+
+  /// 1.1 Register — returns message (and optional dev OTP).
+  Future<Map<String, dynamic>> register({
+    required String name,
+    required String email,
+    required String password,
+    required String passwordConfirmation,
+    String? phone,
+  }) async {
+    if (ApiConfig.demoAuth) {
+      return {
+        'email': email,
+        'message': 'Registration successful. Please verify your email.',
+        'otp': '123456',
+      };
+    }
+    return _api.register(
+      name: name,
+      email: email,
+      password: password,
+      passwordConfirmation: passwordConfirmation,
+      phone: phone,
+    );
+  }
+
+  /// 1.2 Verify OTP for register → session.
+  Future<UserModel> verifyRegisterOtp({
+    required String email,
+    required String otp,
+  }) async {
+    if (ApiConfig.demoAuth) {
+      return _loginDemo(email: email);
+    }
+    final res = await _api.verifyOtp(
+      email: email,
+      otp: otp,
+      purpose: 'register',
+    );
+    await applyAuth(
+      user: res.user,
+      accessToken: res.accessToken,
+      tokenType: res.tokenType,
+    );
+    return res.user;
+  }
+
+  /// 1.3 Resend OTP
+  Future<String?> resendOtp({
+    required String email,
+    required String purpose,
+  }) async {
+    if (ApiConfig.demoAuth) {
+      return 'OTP resent successfully.';
+    }
+    return _api.resendOtp(email: email, purpose: purpose);
   }
 
   Future<UserModel> _loginDemo({

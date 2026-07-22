@@ -90,39 +90,48 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
       return;
     }
 
-    // Register verify stays local until register API is wired.
     setState(() => _loading = true);
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    if (!mounted) return;
-    setState(() => _loading = false);
-    goToHome(context);
+    try {
+      await AuthController.instance.verifyRegisterOtp(
+        email: widget.email,
+        otp: otp,
+      );
+      if (!mounted) return;
+      goToHome(context);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      showApiError(context, e);
+    } catch (e) {
+      if (!mounted) return;
+      showApiError(context, e);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Future<void> _onResend() async {
     if (_resendSeconds > 0) return;
 
-    if (widget.purpose == OtpPurpose.resetPassword) {
-      try {
+    try {
+      if (widget.purpose == OtpPurpose.resetPassword) {
         await AuthController.instance.api.forgotPassword(email: widget.email);
-        if (!mounted) return;
-        showApiMessage(context, 'Code resent');
-        _startResendTimer();
-      } on ApiException catch (e) {
-        if (!mounted) return;
-        showApiError(context, e);
+      } else {
+        await AuthController.instance.resendOtp(
+          email: widget.email,
+          purpose: 'register',
+        );
       }
-      return;
+      if (!mounted) return;
+      showApiMessage(context, 'Code resent');
+      _startResendTimer();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      showApiError(context, e);
     }
-
-    _startResendTimer();
   }
 
   @override
   Widget build(BuildContext context) {
-    final purposeLabel = widget.purpose == OtpPurpose.register
-        ? 'verify your email'
-        : 'reset your password';
-
     final bottom = MediaQuery.paddingOf(context).bottom;
 
     return Scaffold(
@@ -170,9 +179,7 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
                   begin: 0.18,
                   end: 0.65,
                   child: Text(
-                    widget.purpose == OtpPurpose.resetPassword
-                        ? 'Enter the 6-digit code we sent to ${widget.email}.'
-                        : 'Enter any 6 digits (or tap Verify) to $purposeLabel — static preview.',
+                    'Enter the 6-digit code we sent to ${widget.email}.',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),

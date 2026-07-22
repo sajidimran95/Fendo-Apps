@@ -3,11 +3,65 @@ import '../core/network/api_exception.dart';
 import '../models/auth_response.dart';
 import '../models/user_model.dart';
 
-/// Auth endpoints 1.4 – 1.10 from API docs.
+/// Auth endpoints 1.1 – 1.10 from API docs.
 class AuthApi {
   AuthApi(this._client);
 
   final ApiClient _client;
+
+  /// 1.1 POST /auth/register
+  Future<Map<String, dynamic>> register({
+    required String name,
+    required String email,
+    required String password,
+    required String passwordConfirmation,
+    String? phone,
+  }) async {
+    final res = await _client.post(
+      '/auth/register',
+      data: {
+        'name': name,
+        'email': email,
+        'password': password,
+        'password_confirmation': passwordConfirmation,
+        if (phone != null && phone.isNotEmpty) 'phone': phone,
+      },
+    );
+    return unwrapMap(res.data);
+  }
+
+  /// 1.2 POST /auth/verify-otp
+  Future<AuthResponse> verifyOtp({
+    required String email,
+    required String otp,
+    required String purpose,
+  }) async {
+    final res = await _client.post(
+      '/auth/verify-otp',
+      data: {
+        'email': email,
+        'otp': otp,
+        'purpose': purpose,
+      },
+    );
+    return AuthResponse.fromJson(unwrapMap(res.data));
+  }
+
+  /// 1.3 POST /auth/resend-otp
+  Future<String?> resendOtp({
+    required String email,
+    required String purpose,
+  }) async {
+    final res = await _client.post(
+      '/auth/resend-otp',
+      data: {
+        'email': email,
+        'purpose': purpose,
+      },
+    );
+    final map = unwrapMap(res.data);
+    return map['message']?.toString();
+  }
 
   /// 1.4 POST /auth/login
   Future<AuthResponse> login({

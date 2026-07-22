@@ -7,9 +7,10 @@ class ApiConfig {
   ApiConfig._();
 
   /// No trailing slash. Paths are like `/auth/login`.
+  /// Docs: `https://api.fendo.app/v1` or `http://localhost/fendo/public/api/v1`
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://api.fendo.app/api',
+    defaultValue: 'https://api.fendo.app/v1',
   );
 
   /// When true, any email/password signs in locally (no API).

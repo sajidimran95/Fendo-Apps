@@ -307,7 +307,16 @@ class _BillPaySheet extends StatefulWidget {
 }
 
 class _BillPaySheetState extends State<_BillPaySheet> {
-  static const _methods = ['cash', 'venmo', 'paypal', 'zelle', 'card'];
+  static const _methods = [
+    'cash',
+    'bank_transfer',
+    'venmo',
+    'paypal',
+    'zelle',
+    'cashapp',
+    'apple_pay',
+    'other',
+  ];
 
   late final TextEditingController _amountCtrl;
   late final TextEditingController _otherCtrl;

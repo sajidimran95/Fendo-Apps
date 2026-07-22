@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/network/api_exception.dart';
+import '../../services/auth_controller.dart';
 import '../../theme/app_colors.dart';
+import '../../utils/api_feedback.dart';
 import '../../widgets/auth/auth_background.dart';
 import '../../widgets/auth/auth_widgets.dart';
 import 'otp_verify_screen.dart';
@@ -47,24 +50,61 @@ class _SignupScreenState extends State<SignupScreen>
   }
 
   Future<void> _onSignup() async {
-    // Static: any fields go to OTP then home
+    final name = _nameCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
+    final phone = _phoneCtrl.text.trim();
+    final password = _passwordCtrl.text;
+    final confirm = _confirmCtrl.text;
+
+    if (name.isEmpty || email.isEmpty || password.isEmpty) {
+      showApiError(
+        context,
+        ApiException(message: 'Name, email and password are required'),
+      );
+      return;
+    }
+    if (password != confirm) {
+      showApiError(
+        context,
+        ApiException(message: 'Passwords do not match'),
+      );
+      return;
+    }
+    if (password.length < 8) {
+      showApiError(
+        context,
+        ApiException(message: 'Password must be at least 8 characters'),
+      );
+      return;
+    }
+
     setState(() => _loading = true);
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    if (!mounted) return;
-    setState(() => _loading = false);
-
-    final email = _emailCtrl.text.trim().isEmpty
-        ? 'new@fendo.app'
-        : _emailCtrl.text.trim();
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => OtpVerifyScreen(
-          email: email,
-          purpose: OtpPurpose.register,
+    try {
+      await AuthController.instance.register(
+        name: name,
+        email: email,
+        password: password,
+        passwordConfirmation: confirm,
+        phone: phone.isEmpty ? null : phone,
+      );
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => OtpVerifyScreen(
+            email: email,
+            purpose: OtpPurpose.register,
+          ),
         ),
-      ),
-    );
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      showApiError(context, e);
+    } catch (e) {
+      if (!mounted) return;
+      showApiError(context, e);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
