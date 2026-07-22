@@ -47,6 +47,7 @@ class PersonalReport {
     this.byCategory = const [],
     this.byMonth = const [],
     this.byGroup = const [],
+    this.byPerson = const [],
     this.balanceTrend = const [],
     this.from,
     this.to,
@@ -57,6 +58,8 @@ class PersonalReport {
   final List<ReportBucket> byCategory;
   final List<ReportBucket> byMonth;
   final List<ReportBucket> byGroup;
+  /// Spending / money involved, grouped by person or bill name.
+  final List<ReportBucket> byPerson;
   final List<ReportBucket> balanceTrend;
   final String? from;
   final String? to;
@@ -78,9 +81,36 @@ class PersonalReport {
       byCategory: ReportBucket.listFrom(data['by_category']),
       byMonth: ReportBucket.listFrom(data['by_month']),
       byGroup: ReportBucket.listFrom(data['by_group']),
+      byPerson: ReportBucket.listFrom(
+        data['by_person'] ?? data['by_member'] ?? data['by_user'],
+      ),
       balanceTrend: ReportBucket.listFrom(data['balance_trend']),
       from: period?['from']?.toString() ?? data['from']?.toString(),
       to: period?['to']?.toString() ?? data['to']?.toString(),
+    );
+  }
+
+  PersonalReport copyWith({
+    double? totalSpent,
+    double? totalOwed,
+    List<ReportBucket>? byCategory,
+    List<ReportBucket>? byMonth,
+    List<ReportBucket>? byGroup,
+    List<ReportBucket>? byPerson,
+    List<ReportBucket>? balanceTrend,
+    String? from,
+    String? to,
+  }) {
+    return PersonalReport(
+      totalSpent: totalSpent ?? this.totalSpent,
+      totalOwed: totalOwed ?? this.totalOwed,
+      byCategory: byCategory ?? this.byCategory,
+      byMonth: byMonth ?? this.byMonth,
+      byGroup: byGroup ?? this.byGroup,
+      byPerson: byPerson ?? this.byPerson,
+      balanceTrend: balanceTrend ?? this.balanceTrend,
+      from: from ?? this.from,
+      to: to ?? this.to,
     );
   }
 }

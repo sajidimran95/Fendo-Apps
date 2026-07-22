@@ -47,6 +47,12 @@ class ReportsController extends ChangeNotifier {
         ReportBucket(label: 'Apartment 4B', amount: 180),
         ReportBucket(label: 'Weekend Crew', amount: 60),
       ],
+      byPerson: const [
+        ReportBucket(label: 'Alice', amount: 120),
+        ReportBucket(label: 'Sam', amount: 95),
+        ReportBucket(label: 'Maya', amount: 80),
+        ReportBucket(label: 'Internet bill', amount: 45),
+      ],
       balanceTrend: const [
         ReportBucket(label: 'Apr', amount: 40),
         ReportBucket(label: 'May', amount: 95),
@@ -151,6 +157,9 @@ class ReportsController extends ChangeNotifier {
         'by_group': personal.byGroup
             .map((e) => {'label': e.label, 'amount': e.amount})
             .toList(),
+        'by_person': personal.byPerson
+            .map((e) => {'label': e.label, 'amount': e.amount})
+            .toList(),
         'balance_trend': personal.balanceTrend
             .map((e) => {'label': e.label, 'amount': e.amount})
             .toList(),
@@ -173,6 +182,9 @@ class ReportsController extends ChangeNotifier {
       }
       for (final b in personal.byGroup) {
         buf.writeln('by_group,${b.label},${b.amount}');
+      }
+      for (final b in personal.byPerson) {
+        buf.writeln('by_person,${b.label},${b.amount}');
       }
       for (final b in personal.balanceTrend) {
         buf.writeln('balance_trend,${b.label},${b.amount}');

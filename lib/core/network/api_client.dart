@@ -212,6 +212,8 @@ class ApiClient {
       message = e.message!;
     }
 
+    message = _humanizeServerMessage(message);
+
     if (kDebugMode) {
       debugPrint(
         'API error status=$status type=${e.type} message=$message data=$data',
@@ -223,6 +225,21 @@ class ApiClient {
       statusCode: status,
       errors: errors,
     );
+  }
+
+  /// Soften Laravel stack-trace style messages for the UI.
+  static String _humanizeServerMessage(String message) {
+    final lower = message.toLowerCase();
+    if (lower.contains('no query results') ||
+        lower.contains('model not found') ||
+        RegExp(r'app[/\\]models', caseSensitive: false).hasMatch(message)) {
+      return 'That record was not found. Refresh and try again.';
+    }
+    if (lower.contains('query expression') ||
+        lower.contains('could not be converted to string')) {
+      return 'Server error while finishing the request. Please refresh.';
+    }
+    return message;
   }
 }
 

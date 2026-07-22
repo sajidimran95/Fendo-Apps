@@ -13,13 +13,35 @@ class ContactsMatchService {
   static Future<bool> requestPermission() async {
     final status = await Permission.contacts.request();
     if (status.isGranted) return true;
-    // flutter_contacts also has its own request path on some devices.
     return FlutterContacts.requestPermission(readonly: true);
   }
 
   static Future<bool> hasPermission() async {
     final status = await Permission.contacts.status;
     return status.isGranted;
+  }
+
+  static List<String> _phonesOf(Contact c) {
+    final out = <String>[];
+    final seen = <String>{};
+    for (final p in c.phones) {
+      final raw = p.number.trim();
+      if (raw.isEmpty) continue;
+      // Keep display form; also keep digits-only for matching uniqueness.
+      if (seen.add(raw)) out.add(raw);
+    }
+    return out;
+  }
+
+  static List<String> _emailsOf(Contact c) {
+    final out = <String>[];
+    final seen = <String>{};
+    for (final e in c.emails) {
+      final raw = e.address.trim();
+      if (!raw.contains('@')) continue;
+      if (seen.add(raw.toLowerCase())) out.add(raw);
+    }
+    return out;
   }
 
   /// Loads device contacts, then matches against Fendo users.
@@ -34,6 +56,7 @@ class ContactsMatchService {
       );
     }
 
+    // Light list first (faster), then fill properties when missing.
     final deviceContacts = await FlutterContacts.getContacts(
       withProperties: true,
       withPhoto: false,
@@ -43,14 +66,27 @@ class ContactsMatchService {
     for (final c in deviceContacts) {
       final name = c.displayName.trim();
       if (name.isEmpty) continue;
-      final phones = c.phones
-          .map((p) => p.number.trim())
-          .where((p) => p.isNotEmpty)
-          .toList();
-      final emails = c.emails
-          .map((e) => e.address.trim())
-          .where((e) => e.contains('@'))
-          .toList();
+
+      var phones = _phonesOf(c);
+      var emails = _emailsOf(c);
+
+      // Some Android builds return name-only until the contact is fully loaded.
+      if (phones.isEmpty && emails.isEmpty && c.id.isNotEmpty) {
+        try {
+          final full = await FlutterContacts.getContact(
+            c.id,
+            withProperties: true,
+            withPhoto: false,
+          );
+          if (full != null) {
+            phones = _phonesOf(full);
+            emails = _emailsOf(full);
+          }
+        } catch (_) {
+          // Keep empty; skip below if still no phone/email.
+        }
+      }
+
       if (phones.isEmpty && emails.isEmpty) continue;
 
       inputs.add(
@@ -67,18 +103,55 @@ class ContactsMatchService {
       return const [];
     }
 
-    // Match in chunks to avoid huge payloads.
     const chunkSize = 100;
     final matched = <ContactMatchResult>[];
     for (var i = 0; i < inputs.length; i += chunkSize) {
-      final end = (i + chunkSize < inputs.length) ? i + chunkSize : inputs.length;
+      final end =
+          (i + chunkSize < inputs.length) ? i + chunkSize : inputs.length;
       final chunk = inputs.sublist(i, end);
+      final byLocalId = {for (final c in chunk) c.localId: c};
+
       try {
         final rows =
             await AuthController.instance.contactsApi.matchContacts(chunk);
-        matched.addAll(rows);
+        final seen = <String>{};
+        for (final row in rows) {
+          final local = byLocalId[row.localId];
+          seen.add(row.localId);
+          // API often omits phones/emails — keep device values.
+          matched.add(
+            ContactMatchResult(
+              localId: row.localId.isNotEmpty
+                  ? row.localId
+                  : (local?.localId ?? ''),
+              name: row.name.trim().isNotEmpty
+                  ? row.name.trim()
+                  : (local?.name ?? ''),
+              isAppUser: row.isAppUser || row.user != null,
+              user: row.user,
+              phones: row.phones.isNotEmpty
+                  ? row.phones
+                  : (local?.phones ?? const []),
+              emails: row.emails.isNotEmpty
+                  ? row.emails
+                  : (local?.emails ?? const []),
+            ),
+          );
+        }
+        // Any device contact the API skipped.
+        for (final c in chunk) {
+          if (seen.contains(c.localId)) continue;
+          matched.add(
+            ContactMatchResult(
+              localId: c.localId,
+              name: c.name,
+              isAppUser: false,
+              phones: c.phones,
+              emails: c.emails,
+            ),
+          );
+        }
       } on ApiException {
-        // Fall back to unmatched device rows for this chunk.
         matched.addAll(
           chunk.map(
             (c) => ContactMatchResult(

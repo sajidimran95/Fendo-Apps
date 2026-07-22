@@ -145,19 +145,107 @@ class SettlementsController extends ChangeNotifier {
       notifyListeners();
       return settlement;
     }
-    final settlement = await _api.createSettlement(
-      payeeId: payeeId,
-      groupId: groupId,
-      amount: amount,
-      currency: currency,
-      paymentMethod: paymentMethod,
-      paymentReference: paymentReference,
-      notes: notes,
-      settlementDate: settlementDate,
-    );
-    _settlements.insert(0, settlement);
-    notifyListeners();
-    return settlement;
+    if (payeeId <= 0) {
+      throw ApiException(message: 'Select a valid payee');
+    }
+    if (groupId <= 0) {
+      throw ApiException(message: 'Select a valid group');
+    }
+
+    try {
+      final settlement = await _api.createSettlement(
+        payeeId: payeeId,
+        groupId: groupId,
+        amount: amount,
+        currency: currency,
+        paymentMethod: paymentMethod,
+        paymentReference: paymentReference,
+        notes: notes,
+        settlementDate: settlementDate,
+      );
+      _settlements.insert(0, settlement);
+      notifyListeners();
+      return settlement;
+    } on ApiException catch (e) {
+      // Live API often creates the row then 500s while building the response
+      // (Query Expression / ModelNotFound). Recover by reloading the list.
+      if (_looksLikeSettlementResponseBug(e)) {
+        final recovered = await _recoverCreatedSettlement(
+          payeeId: payeeId,
+          groupId: groupId,
+          amount: amount,
+          notes: notes,
+          payeeName: payeeName,
+          groupName: groupName,
+        );
+        if (recovered != null) return recovered;
+      }
+      rethrow;
+    }
+  }
+
+  bool _looksLikeSettlementResponseBug(ApiException e) {
+    final code = e.statusCode ?? 0;
+    // Live create endpoint often 500s after writing the row.
+    if (code == 500) return true;
+    final msg = e.message.toLowerCase();
+    return msg.contains('query expression') ||
+        msg.contains('could not be converted to string') ||
+        msg.contains('no query results') ||
+        msg.contains('app\\models') ||
+        msg.contains('app/models') ||
+        msg.contains('model not found') ||
+        msg.contains('server error while finishing') ||
+        msg.contains('that record was not found');
+  }
+
+  Future<SettlementModel?> _recoverCreatedSettlement({
+    required int payeeId,
+    required int groupId,
+    required double amount,
+    String? notes,
+    String? payeeName,
+    String? groupName,
+  }) async {
+    try {
+      final list = await _api.listSettlements();
+      _settlements
+        ..clear()
+        ..addAll(list);
+      notifyListeners();
+
+      SettlementModel? match;
+      for (final s in list) {
+        final amountOk = (s.amount - amount).abs() < 0.009;
+        final payeeOk = s.payeeId == payeeId;
+        final groupOk = s.groupId == groupId;
+        final notesOk = notes == null ||
+            notes.isEmpty ||
+            (s.notes ?? '') == notes;
+        if (amountOk && payeeOk && groupOk && notesOk) {
+          match = s;
+          break;
+        }
+      }
+      if (match == null) {
+        for (final s in list) {
+          if (s.payeeId == payeeId &&
+              s.groupId == groupId &&
+              (s.amount - amount).abs() < 0.009) {
+            match = s;
+            break;
+          }
+        }
+      }
+
+      if (match == null) return null;
+      return match.copyWith(
+        payeeName: match.payeeName ?? payeeName,
+        groupName: match.groupName ?? groupName,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<List<SettlementRequest>> loadRequests() async {

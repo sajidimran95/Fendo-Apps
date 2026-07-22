@@ -111,7 +111,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     setState(() {
       _uploadingAvatar = true;
-      _localAvatarPath = file.path; // instant preview
+      _localAvatarPath = file.path; // instant preview while uploading
     });
     try {
       final current = AuthController.instance.user;
@@ -125,7 +125,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() {
         _avatarCacheBust = DateTime.now().millisecondsSinceEpoch;
       });
-      showApiMessage(context, 'Avatar updated');
+      showApiMessage(context, 'Avatar saved');
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _localAvatarPath = null);

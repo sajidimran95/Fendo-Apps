@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/network/api_exception.dart';
 import '../../models/bill_model.dart';
 import '../../models/report_model.dart';
+import '../../services/auth_controller.dart';
 import '../../services/bills_controller.dart';
 import '../../services/reports_controller.dart';
 import '../../services/spending_totals.dart';
@@ -59,7 +60,32 @@ class _ReportsScreenState extends State<ReportsScreen> {
         from: _from,
         to: _to,
       );
-      final merged = SpendingTotals.mergePersonal(report, paid);
+
+      List<ReportBucket> byPerson = report.byPerson;
+      final meId = AuthController.instance.user?.id;
+      if (meId != null) {
+        try {
+          final expenses =
+              await AuthController.instance.expensesApi.listExpenses(
+            from: _fmt(_from),
+            to: _fmt(_to),
+          );
+          byPerson = SpendingTotals.byPersonFromExpenses(
+            expenses,
+            meId: meId,
+            from: _from,
+            to: _to,
+          );
+        } catch (_) {
+          // Keep API byPerson if expense list fails.
+        }
+      }
+
+      final merged = SpendingTotals.mergePersonal(
+        report,
+        paid,
+        byPerson: byPerson,
+      );
 
       if (!mounted) return;
       setState(() {
@@ -208,6 +234,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   billsPaid: _billsPaidTotal,
                   subtitle: '${r.from ?? _fmt(_from)} → ${r.to ?? _fmt(_to)}',
                 ),
+                const SectionLabel('By person / name'),
+                ReportBucketList(items: r.byPerson, positive: false),
                 const SectionLabel('Bills paid'),
                 if (_paidBills.isEmpty)
                   Padding(

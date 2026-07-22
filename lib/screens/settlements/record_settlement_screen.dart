@@ -71,7 +71,8 @@ class _RecordSettlementScreenState extends State<RecordSettlementScreen> {
     final members = await GroupsController.instance.getMembers(groupId);
     if (!mounted) return;
     final me = AuthController.instance.user?.id ?? 1;
-    final others = members.where((m) => m.userId != me).toList();
+    final others =
+        members.where((m) => m.userId != me && m.userId > 0).toList();
     setState(() {
       _members = others;
       _payee = others.isNotEmpty ? others.first : null;

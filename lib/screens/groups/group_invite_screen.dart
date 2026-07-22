@@ -24,6 +24,7 @@ class GroupInviteScreen extends StatefulWidget {
 
 class _GroupInviteScreenState extends State<GroupInviteScreen> {
   final _emails = TextEditingController();
+  final _phones = TextEditingController();
   final _search = TextEditingController();
   bool _sending = false;
   bool _linking = false;
@@ -40,12 +41,14 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
   void initState() {
     super.initState();
     _emails.addListener(() => setState(() {}));
+    _phones.addListener(() => setState(() {}));
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadContacts());
   }
 
   @override
   void dispose() {
     _emails.dispose();
+    _phones.dispose();
     _search.dispose();
     super.dispose();
   }
@@ -138,10 +141,26 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
       .where((e) => e.contains('@'))
       .toList();
 
-  List<String> get _contactEmails {
+  List<String> get _manualPhones => _phones.text
+      .split(RegExp(r'[,;\s]+'))
+      .map((e) => e.trim())
+      .where((e) => e.replaceAll(RegExp(r'\D'), '').length >= 7)
+      .toList();
+
+  List<ContactMatchResult> get _selectedContacts => _contacts
+      .where((c) => _selectedLocalIds.contains(c.localId))
+      .toList();
+
+  List<ContactMatchResult> get _selectedOnFendo =>
+      _selectedContacts.where((c) => c.isAppUser).toList();
+
+  List<ContactMatchResult> get _selectedNeedInvite =>
+      _selectedContacts.where((c) => !c.isAppUser).toList();
+
+  /// Emails for contacts already on Fendo (add to group).
+  List<String> get _onFendoEmails {
     final emails = <String>{};
-    for (final c in _contacts) {
-      if (!_selectedLocalIds.contains(c.localId)) continue;
+    for (final c in _selectedOnFendo) {
       final fromUser = c.user?.email.trim();
       if (fromUser != null && fromUser.contains('@')) {
         emails.add(fromUser);
@@ -155,11 +174,10 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
     return emails.toList();
   }
 
-  List<String> get _contactPhones {
+  /// Phones for contacts already on Fendo (add to group).
+  List<String> get _onFendoPhones {
     final phones = <String>{};
-    for (final c in _contacts) {
-      if (!_selectedLocalIds.contains(c.localId)) continue;
-      // Prefer matched Fendo user phone when present.
+    for (final c in _selectedOnFendo) {
       final fromUser = c.user?.phone?.trim();
       if (fromUser != null && fromUser.isNotEmpty) {
         phones.add(fromUser);
@@ -172,12 +190,23 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
     return phones.toList();
   }
 
-  List<String> get _allInviteEmails {
-    final set = <String>{..._manualEmails, ..._contactEmails};
-    return set.toList();
-  }
+  bool get _hasPendingInviteAction =>
+      _selectedLocalIds.isNotEmpty ||
+      _manualEmails.isNotEmpty ||
+      _manualPhones.isNotEmpty;
 
   void _toggleContact(ContactMatchResult c) {
+    final hasEmail = c.emails.any((e) => e.contains('@')) ||
+        (c.user?.email.contains('@') ?? false);
+    final hasPhone = c.phones.any((p) => p.trim().isNotEmpty) ||
+        ((c.user?.phone ?? '').trim().isNotEmpty);
+    if (!c.isAppUser && !hasEmail && !hasPhone) {
+      showApiError(
+        context,
+        ApiException(message: 'This contact needs an email or phone to invite'),
+      );
+      return;
+    }
     setState(() {
       if (_selectedLocalIds.contains(c.localId)) {
         _selectedLocalIds.remove(c.localId);
@@ -187,44 +216,186 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
     });
   }
 
+  Future<String> _ensureInviteLink() async {
+    if (_inviteLink != null && _inviteLink!.isNotEmpty) return _inviteLink!;
+    final link =
+        await GroupsController.instance.createInviteLink(widget.groupId);
+    if (!mounted) return link.inviteLink;
+    setState(() {
+      _inviteLink = link.inviteLink;
+      _inviteToken = link.inviteToken;
+      _expiresAt = link.expiresAt;
+    });
+    return link.inviteLink;
+  }
+
+  Future<void> _showInviteLinkSheet({
+    required String link,
+    required List<String> names,
+  }) async {
+    if (!mounted) return;
+    final namesLabel = names.isEmpty
+        ? 'people not on Fendo yet'
+        : names.take(4).join(', ') + (names.length > 4 ? '…' : '');
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Invite to Fendo',
+                style: GoogleFonts.sora(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.forest,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Share this link with $namesLabel so they can join the group.',
+                style: GoogleFonts.manrope(
+                  color: AppColors.textSecondary,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 14),
+              SelectableText(
+                link,
+                style: GoogleFonts.manrope(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.forest,
+                ),
+              ),
+              const SizedBox(height: 16),
+              AuthPrimaryButton(
+                label: 'Copy invite link',
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: link));
+                  if (!ctx.mounted) return;
+                  Navigator.pop(ctx);
+                  if (!mounted) return;
+                  showApiMessage(this.context, 'Invite link copied');
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _sendInvites() async {
-    final emails = _allInviteEmails;
-    final phones = _contactPhones;
-    if (emails.isEmpty && phones.isEmpty) {
+    if (!_hasPendingInviteAction) {
       showApiError(
         context,
         ApiException(
-          message: 'Select contacts (email or phone) or type emails below',
+          message: 'Select contacts or enter email / mobile number',
         ),
       );
       return;
     }
+
     setState(() => _sending = true);
     try {
-      final result = await GroupsController.instance.inviteContacts(
-        widget.groupId,
-        emails: emails,
-        phones: phones,
-      );
+      var added = 0;
+      var already = 0;
+      final needInviteNames = <String>[
+        ..._selectedNeedInvite.map((c) => c.user?.name ?? c.name),
+      ];
+      final needInviteLookup = <String>{};
+
+      // 1) Add people already on Fendo (email + phone).
+      final addEmails = <String>{..._onFendoEmails};
+      final addPhones = <String>{..._onFendoPhones};
+
+      // Manual entries: try add first; failures become invite-needed.
+      addEmails.addAll(_manualEmails);
+      addPhones.addAll(_manualPhones);
+
+      if (addEmails.isNotEmpty || addPhones.isNotEmpty) {
+        try {
+          final result = await GroupsController.instance.inviteContacts(
+            widget.groupId,
+            emails: addEmails.toList(),
+            phones: addPhones.toList(),
+          );
+          added += result.addedCount;
+          already += result.alreadyMembers.length;
+          for (final miss in result.notFound) {
+            needInviteLookup.add(miss);
+            needInviteNames.add(miss);
+          }
+        } on ApiException catch (e) {
+          // Email invite rejects non-registered emails with 422.
+          if (e.isValidation) {
+            needInviteNames.addAll(_manualEmails);
+            needInviteLookup.addAll(_manualEmails);
+            // Still try phones alone if email batch failed entirely.
+            if (addPhones.isNotEmpty && addEmails.isNotEmpty) {
+              try {
+                final phoneOnly =
+                    await GroupsController.instance.inviteByPhone(
+                  widget.groupId,
+                  phones: addPhones.toList(),
+                );
+                added += phoneOnly.addedCount;
+                already += phoneOnly.alreadyMembers.length;
+                for (final miss in phoneOnly.notFound) {
+                  needInviteLookup.add(miss);
+                  needInviteNames.add(miss);
+                }
+              } on ApiException {
+                needInviteNames.addAll(addPhones);
+              }
+            } else if (addPhones.isNotEmpty) {
+              needInviteNames.addAll(addPhones);
+            }
+          } else {
+            rethrow;
+          }
+        }
+      }
+
+      // Selected non-users always get invite link option.
+      final shouldOfferInvite =
+          needInviteNames.isNotEmpty || _selectedNeedInvite.isNotEmpty;
+
       if (!mounted) return;
       final parts = <String>[];
-      if (result.addedCount > 0) {
-        parts.add('${result.addedCount} added');
+      if (added > 0) parts.add('$added added');
+      if (already > 0) parts.add('$already already members');
+      if (shouldOfferInvite) {
+        parts.add(
+          '${_selectedNeedInvite.length + needInviteLookup.length} need invite',
+        );
       }
-      if (result.alreadyMembers.isNotEmpty) {
-        parts.add('${result.alreadyMembers.length} already members');
+
+      if (parts.isNotEmpty) {
+        showApiMessage(context, parts.join(' · '));
       }
-      if (result.notFound.isNotEmpty) {
-        parts.add('${result.notFound.length} not on Fendo');
+
+      if (shouldOfferInvite) {
+        final link = await _ensureInviteLink();
+        final uniqueNames = <String>{
+          ..._selectedNeedInvite.map((c) => c.user?.name ?? c.name),
+          ...needInviteLookup,
+        }.toList();
+        await _showInviteLinkSheet(link: link, names: uniqueNames);
+      } else if (parts.isEmpty) {
+        showApiMessage(context, 'Invite finished');
       }
-      showApiMessage(
-        context,
-        parts.isEmpty
-            ? (result.message ?? 'Invite finished')
-            : parts.join(' · '),
-      );
+
       setState(() {
         _emails.clear();
+        _phones.clear();
         _selectedLocalIds.clear();
       });
     } on ApiException catch (e) {
@@ -273,11 +444,19 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                   padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
                   children: [
                     Text(
-                      'Invite by email',
+                      'Add by email or mobile',
                       style: GoogleFonts.sora(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
                         color: AppColors.forest,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'On Fendo accounts are added to the group. Others get an invite link.',
+                      style: GoogleFonts.manrope(
+                        fontSize: 12,
+                        color: AppColors.textMuted,
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -286,6 +465,13 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                       label: 'Emails',
                       hint: 'a@mail.com, b@mail.com',
                       keyboardType: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: 12),
+                    AuthTextField(
+                      controller: _phones,
+                      label: 'Mobile numbers',
+                      hint: '+1 555 123 4567',
+                      keyboardType: TextInputType.phone,
                     ),
                     const SizedBox(height: 22),
                     Text(
@@ -372,7 +558,7 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'API matches contacts on Fendo by email or phone.',
+                      'Select anyone — On Fendo are added, others get an invite option.',
                       style: GoogleFonts.manrope(
                         fontSize: 12,
                         color: AppColors.textMuted,
@@ -404,9 +590,7 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                         Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: Text(
-                            '${_selectedLocalIds.length} selected'
-                            '${_contactEmails.isNotEmpty ? ' · ${_contactEmails.length} email' : ''}'
-                            '${_contactPhones.isNotEmpty ? ' · ${_contactPhones.length} phone' : ''}',
+                            '${_selectedOnFendo.length} add · ${_selectedNeedInvite.length} invite',
                             style: GoogleFonts.manrope(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
@@ -431,7 +615,7 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                   ],
                 ),
               ),
-              if (_selectedLocalIds.isNotEmpty || _manualEmails.isNotEmpty)
+              if (_hasPendingInviteAction)
                 SafeArea(
                   top: false,
                   child: Container(
@@ -448,9 +632,25 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                       ],
                     ),
                     child: AuthPrimaryButton(
-                      label: _selectedLocalIds.isEmpty
-                          ? 'Invite ${_manualEmails.length} by email'
-                          : 'Add ${_selectedLocalIds.length} contact${_selectedLocalIds.length == 1 ? '' : 's'}',
+                      label: () {
+                        final inviteN = _selectedNeedInvite.length;
+                        final addN = _selectedOnFendo.length;
+                        if (_selectedLocalIds.isEmpty &&
+                            (_manualEmails.isNotEmpty ||
+                                _manualPhones.isNotEmpty)) {
+                          return 'Add / invite';
+                        }
+                        if (inviteN > 0 && addN == 0) {
+                          return 'Invite $inviteN contact${inviteN == 1 ? '' : 's'}';
+                        }
+                        if (inviteN > 0) {
+                          return 'Add $addN · Invite $inviteN';
+                        }
+                        final n = _selectedLocalIds.isEmpty
+                            ? (_manualEmails.length + _manualPhones.length)
+                            : _selectedLocalIds.length;
+                        return 'Add $n contact${n == 1 ? '' : 's'}';
+                      }(),
                       loading: _sending,
                       onPressed: _sending ? null : _sendInvites,
                     ),
@@ -625,6 +825,28 @@ class _InviteContactTile extends StatelessWidget {
                         fontSize: 10,
                         fontWeight: FontWeight.w800,
                         color: AppColors.mintDim,
+                      ),
+                    ),
+                  ),
+                )
+              else if (canInvite)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceMuted,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      'Invite',
+                      style: GoogleFonts.manrope(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textMuted,
                       ),
                     ),
                   ),

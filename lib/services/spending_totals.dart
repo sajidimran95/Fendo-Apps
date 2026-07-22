@@ -1,4 +1,5 @@
 import '../models/bill_model.dart';
+import '../models/expense_model.dart';
 import '../models/report_model.dart';
 
 /// Helpers to treat bill payments as spending (backend reports are expense-only).
@@ -53,10 +54,19 @@ class SpendingTotals {
   /// Merge paid bills into a personal report so all spending calcs include them.
   static PersonalReport mergePersonal(
     PersonalReport report,
-    List<BillModel> paidBills,
-  ) {
+    List<BillModel> paidBills, {
+    List<ReportBucket> byPerson = const [],
+  }) {
     final billsTotal = sumPaid(paidBills);
-    if (billsTotal <= 0 && paidBills.isEmpty) return report;
+    final billPeople = _billNameBuckets(paidBills);
+    final people = _mergeBuckets(
+      byPerson.isNotEmpty ? byPerson : report.byPerson,
+      billPeople,
+    );
+
+    if (billsTotal <= 0 && paidBills.isEmpty && people.isEmpty) {
+      return report.copyWith(byPerson: people);
+    }
 
     return PersonalReport(
       totalSpent: report.totalSpent + billsTotal,
@@ -73,10 +83,112 @@ class SpendingTotals {
         report.byGroup,
         _groupBuckets(paidBills),
       ),
+      byPerson: people,
       balanceTrend: report.balanceTrend,
       from: report.from,
       to: report.to,
     );
+  }
+
+  /// Build name-wise totals from expenses (your share per other person).
+  static List<ReportBucket> byPersonFromExpenses(
+    List<ExpenseModel> expenses, {
+    required int meId,
+    DateTime? from,
+    DateTime? to,
+  }) {
+    final fromDay =
+        from == null ? null : DateTime(from.year, from.month, from.day);
+    final toDay = to == null ? null : DateTime(to.year, to.month, to.day);
+    final map = <String, double>{};
+
+    for (final e in expenses) {
+      final d = parseDate(e.expenseDate);
+      if (d != null) {
+        final day = DateTime(d.year, d.month, d.day);
+        if (fromDay != null && day.isBefore(fromDay)) continue;
+        if (toDay != null && day.isAfter(toDay)) continue;
+      }
+
+      final myShare = _myShare(e, meId);
+      if (myShare <= 0) continue;
+
+      final others = _otherNames(e, meId);
+      if (others.isEmpty) {
+        final key = _loanPersonFromTitle(e.title) ??
+            (e.title.trim().isNotEmpty ? e.title.trim() : 'Personal');
+        map[key] = (map[key] ?? 0) + myShare;
+        continue;
+      }
+
+      final each = myShare / others.length;
+      for (final name in others) {
+        map[name] = (map[name] ?? 0) + each;
+      }
+    }
+
+    final buckets = map.entries
+        .map((e) => ReportBucket(label: e.key, amount: e.value))
+        .toList()
+      ..sort((a, b) => b.amount.compareTo(a.amount));
+    return buckets;
+  }
+
+  static double _myShare(ExpenseModel e, int meId) {
+    var owed = 0.0;
+    for (final s in e.participants) {
+      if (s.userId == meId) owed += s.amount ?? 0;
+    }
+    if (owed > 0) return owed;
+
+    var paid = 0.0;
+    for (final p in e.payers) {
+      if (p.userId == meId) paid += p.amountPaid;
+    }
+    if (paid > 0) return paid;
+    return 0;
+  }
+
+  static Set<String> _otherNames(ExpenseModel e, int meId) {
+    final names = <String>{};
+    void add(int userId, String? name) {
+      if (userId == meId) return;
+      final n = name?.trim();
+      names.add((n != null && n.isNotEmpty) ? n : 'User $userId');
+    }
+
+    for (final p in e.participants) {
+      add(p.userId, p.name);
+    }
+    for (final p in e.payers) {
+      add(p.userId, p.name);
+    }
+
+    final fromTitle = _loanPersonFromTitle(e.title);
+    if (fromTitle != null && names.isEmpty) {
+      names.add(fromTitle);
+    }
+    return names;
+  }
+
+  static String? _loanPersonFromTitle(String title) {
+    final t = title.trim();
+    const lent = 'Loan: Lent to ';
+    const borrowed = 'Loan: Borrowed from ';
+    if (t.startsWith(lent)) return t.substring(lent.length).trim();
+    if (t.startsWith(borrowed)) return t.substring(borrowed.length).trim();
+    return null;
+  }
+
+  static List<ReportBucket> _billNameBuckets(Iterable<BillModel> bills) {
+    final map = <String, double>{};
+    for (final b in bills) {
+      final key = b.name.trim().isNotEmpty ? b.name.trim() : 'Bill';
+      map[key] = (map[key] ?? 0) + paidAmount(b);
+    }
+    return map.entries
+        .map((e) => ReportBucket(label: e.key, amount: e.value))
+        .toList();
   }
 
   static GroupReport mergeGroup(
@@ -181,7 +293,6 @@ class SpendingTotals {
 
   static String _norm(String label) {
     final t = label.trim().toLowerCase();
-    // Match "2026-07" style to month short name when possible.
     final ym = RegExp(r'^(\d{4})-(\d{2})$').firstMatch(t);
     if (ym != null) {
       final m = int.tryParse(ym.group(2)!);
