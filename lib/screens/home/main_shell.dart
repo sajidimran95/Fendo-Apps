@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/storage/app_prefs.dart';
 import '../../theme/app_colors.dart';
 import '../activity/activity_screen.dart';
 import '../bills/bills_screen.dart';
 import '../groups/groups_screen.dart';
+import '../loans/contacts_permission_screen.dart';
 import '../profile/profile_screen.dart';
 import 'dashboard_screen.dart';
 
@@ -17,6 +19,8 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _index = 0;
+  bool _checkingContacts = true;
+  bool _needsContactsPrompt = false;
 
   final _pages = const [
     DashboardScreen(),
@@ -27,13 +31,52 @@ class _MainShellState extends State<MainShell> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkContactsPrompt());
+  }
+
+  Future<void> _checkContactsPrompt() async {
+    final prompted = await AppPrefs.instance.contactsPrompted;
+    if (!mounted) return;
+    setState(() {
+      _needsContactsPrompt = !prompted;
+      _checkingContacts = false;
+    });
+  }
+
+  Future<void> _finishContactsPrompt({required bool allowed}) async {
+    await AppPrefs.instance.setContactsAllowed(allowed);
+    if (!mounted) return;
+    setState(() => _needsContactsPrompt = false);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_checkingContacts) {
+      return const Scaffold(
+        backgroundColor: AppColors.canvas,
+        body: Center(
+          child: CircularProgressIndicator(color: AppColors.mint),
+        ),
+      );
+    }
+
+    if (_needsContactsPrompt) {
+      return ContactsPermissionScreen(
+        onAllow: () => _finishContactsPrompt(allowed: true),
+        onSkip: () => _finishContactsPrompt(allowed: false),
+      );
+    }
+
     return Scaffold(
       body: IndexedStack(index: _index, children: _pages),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: AppColors.surface,
-          border: Border(top: BorderSide(color: AppColors.border.withValues(alpha: 0.8))),
+          border: Border(
+            top: BorderSide(color: AppColors.border.withValues(alpha: 0.8)),
+          ),
         ),
         child: SafeArea(
           top: false,

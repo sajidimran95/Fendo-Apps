@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../data/mock_data.dart';
+import '../../models/contact_match_model.dart';
+import '../../services/loans_controller.dart';
 import '../../services/notifications_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/common/app_widgets.dart';
 import '../balances/balances_screen.dart';
 import '../expenses/create_expense_screen.dart';
 import '../expenses/expenses_screen.dart';
+import '../loans/create_loan_screen.dart';
+import '../loans/loans_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../settlements/settlements_screen.dart';
 
@@ -176,6 +180,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: _QuickAction(
+                        icon: Icons.volunteer_activism_outlined,
+                        label: 'Loan',
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const CreateLoanScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _QuickAction(
                         icon: Icons.account_balance_wallet_outlined,
                         label: 'Balances',
                         onTap: () {
@@ -189,6 +207,133 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ],
                 ),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: SectionLabel(
+                'Loans',
+                actionLabel: 'See all',
+                onAction: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const LoansScreen()),
+                  );
+                },
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: ListenableBuilder(
+                listenable: LoansController.instance,
+                builder: (context, _) {
+                  final loans = LoansController.instance;
+                  return SoftTile(
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const LoansScreen(),
+                        ),
+                      );
+                    },
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _MiniStat(
+                                label: 'You lent',
+                                value: loans.youLent,
+                                positive: true,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _MiniStat(
+                                label: 'You borrowed',
+                                value: loans.youBorrowed,
+                                positive: false,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceMuted,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              Text(
+                                'Net',
+                                style: GoogleFonts.manrope(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              const Spacer(),
+                              MoneyText(
+                                loans.netBalance,
+                                positive: loans.netBalance >= 0,
+                                size: 16,
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (loans.recent().isNotEmpty) ...[
+                          const SizedBox(height: 14),
+                          ...loans.recent().map((l) {
+                            final give = l.direction == LoanDirection.give;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 16,
+                                    backgroundColor: give
+                                        ? AppColors.mintWash
+                                        : AppColors.coral
+                                            .withValues(alpha: 0.12),
+                                    child: Icon(
+                                      give
+                                          ? Icons.north_east_rounded
+                                          : Icons.south_west_rounded,
+                                      size: 14,
+                                      color: give
+                                          ? AppColors.mint
+                                          : AppColors.coral,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      '${give ? 'Lent to' : 'Borrowed from'} ${l.personName}',
+                                      style: GoogleFonts.manrope(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
+                                        color: AppColors.forest,
+                                      ),
+                                    ),
+                                  ),
+                                  MoneyText(
+                                    l.amount,
+                                    positive: give,
+                                    size: 14,
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                        ],
+                      ],
+                    ),
+                  );
+                },
               ),
             ),
             SliverToBoxAdapter(

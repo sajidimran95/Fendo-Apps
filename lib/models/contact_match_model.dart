@@ -101,6 +101,7 @@ class MockLoan {
     required this.date,
     this.note,
     this.isAppUser = true,
+    this.counterpartyUserId,
   });
 
   final int id;
@@ -111,6 +112,7 @@ class MockLoan {
   final String date;
   final String? note;
   final bool isAppUser;
+  final int? counterpartyUserId;
 
   bool get isGive => direction == LoanDirection.give;
 }
