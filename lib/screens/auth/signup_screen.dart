@@ -39,6 +39,13 @@ class _SignupScreenState extends State<SignupScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     )..forward();
+    _passwordCtrl.addListener(() {
+      final value = _passwordCtrl.text;
+      setState(() {
+        _passwordDraft = value;
+        _showPasswordRules = value.isNotEmpty;
+      });
+    });
   }
 
   @override
@@ -96,11 +103,7 @@ class _SignupScreenState extends State<SignupScreen>
       if (apiMsg != null && apiMsg.isNotEmpty) {
         showApiMessage(context, apiMsg);
       }
-      final otp = result['otp']?.toString();
-      _goToOtp(
-        email,
-        initialOtp: (otp != null && otp.length >= 4) ? otp : null,
-      );
+      _goToOtp(email);
     } on ApiException catch (e) {
       debugPrint('REGISTER ApiException: ${e.statusCode} ${e.displayMessage}');
       if (!mounted) return;
@@ -129,13 +132,12 @@ class _SignupScreenState extends State<SignupScreen>
     }
   }
 
-  void _goToOtp(String email, {String? initialOtp}) {
+  void _goToOtp(String email) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => OtpVerifyScreen(
           email: email,
           purpose: OtpPurpose.register,
-          initialOtp: initialOtp,
         ),
       ),
     );
@@ -265,12 +267,6 @@ class _SignupScreenState extends State<SignupScreen>
                           obscureText: _obscure,
                           textInputAction: TextInputAction.next,
                           prefixIcon: Icons.lock_outline_rounded,
-                          onChanged: (value) {
-                            setState(() {
-                              _passwordDraft = value;
-                              _showPasswordRules = value.isNotEmpty;
-                            });
-                          },
                           suffix: IconButton(
                             onPressed: () =>
                                 setState(() => _obscure = !_obscure),
