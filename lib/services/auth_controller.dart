@@ -12,6 +12,7 @@ import 'balances_api.dart';
 import 'bills_api.dart';
 import 'categories_api.dart';
 import 'contacts_api.dart';
+import 'contacts_match_service.dart';
 import 'dashboard_api.dart';
 import 'dashboard_controller.dart';
 import 'expenses_api.dart';
@@ -262,6 +263,7 @@ class AuthController extends ChangeNotifier {
     _authenticated = false;
     DashboardController.instance.clear();
     ActivityController.instance.clear();
+    ContactsMatchService.clearCache();
     notifyListeners();
   }
 }

@@ -64,7 +64,16 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
 
   Future<void> _loadMatchedContacts() async {
     try {
-      final matched = await ContactsMatchService.loadMatchedContacts();
+      final matched = await ContactsMatchService.loadMatchedContacts(
+        onProgress: (partial) {
+          if (!mounted) return;
+          setState(() {
+            _contacts = partial;
+            // Phonebook ready — show list while On Fendo badges finish.
+            _matching = false;
+          });
+        },
+      );
       if (!mounted) return;
       setState(() {
         _contacts = matched;

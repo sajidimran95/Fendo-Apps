@@ -68,7 +68,15 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
       _loadingContacts = true;
     });
     try {
-      final matched = await ContactsMatchService.loadMatchedContacts();
+      final matched = await ContactsMatchService.loadMatchedContacts(
+        onProgress: (partial) {
+          if (!mounted) return;
+          setState(() {
+            _contacts = partial;
+            _loadingContacts = false;
+          });
+        },
+      );
       if (!mounted) return;
       setState(() {
         _contacts = matched;
@@ -105,7 +113,16 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
         _loadingContacts = true;
       });
       try {
-        final matched = await ContactsMatchService.loadMatchedContacts();
+        final matched = await ContactsMatchService.loadMatchedContacts(
+          forceRefresh: true,
+          onProgress: (partial) {
+            if (!mounted) return;
+            setState(() {
+              _contacts = partial;
+              _loadingContacts = false;
+            });
+          },
+        );
         if (!mounted) return;
         setState(() {
           _contacts = matched;
