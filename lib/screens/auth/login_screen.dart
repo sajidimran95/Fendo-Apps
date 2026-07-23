@@ -9,6 +9,7 @@ import '../../utils/api_feedback.dart';
 import '../../widgets/auth/auth_background.dart';
 import '../../widgets/auth/auth_widgets.dart';
 import 'forgot_password_screen.dart';
+import 'otp_verify_screen.dart';
 import 'signup_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -20,8 +21,8 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
-  final _emailCtrl = TextEditingController();
-  final _passwordCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController(text: 'user@gmail.com');
+  final _passwordCtrl = TextEditingController(text: 'Password1');
   bool _obscure = true;
   bool _loading = false;
 
@@ -63,19 +64,35 @@ class _LoginScreenState extends State<LoginScreen>
       goToHome(context);
     } on ApiException catch (e) {
       if (!mounted) return;
-      if (e.isForbidden) {
-        showApiError(
+      final msg = e.displayMessage.toLowerCase();
+      final needsVerify = e.isForbidden ||
+          msg.contains('verify your email') ||
+          msg.contains('email not verified') ||
+          msg.contains('please verify');
+      if (needsVerify) {
+        showApiMessage(
           context,
-          ApiException(
-            message: e.displayMessage.isNotEmpty
-                ? e.displayMessage
-                : 'Email not verified. Check your inbox.',
-            statusCode: e.statusCode,
+          'Enter the verify code sent to your email',
+        );
+        // Best-effort resend so a code is available.
+        try {
+          await AuthController.instance.resendOtp(
+            email: email,
+            purpose: 'register',
+          );
+        } catch (_) {}
+        if (!mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => OtpVerifyScreen(
+              email: email,
+              purpose: OtpPurpose.register,
+            ),
           ),
         );
-      } else {
-        showApiError(context, e);
+        return;
       }
+      showApiError(context, e);
     } catch (e) {
       if (!mounted) return;
       showApiError(context, e);
@@ -156,7 +173,7 @@ class _LoginScreenState extends State<LoginScreen>
                   child: AuthTextField(
                     controller: _emailCtrl,
                     label: 'Email',
-                    hint: 'you@email.com',
+                    hint: 'Enter your email',
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
                     prefixIcon: Icons.mail_outline_rounded,
@@ -171,7 +188,7 @@ class _LoginScreenState extends State<LoginScreen>
                   child: AuthTextField(
                     controller: _passwordCtrl,
                     label: 'Password',
-                    hint: 'Your password',
+                    hint: '...........',
                     obscureText: _obscure,
                     textInputAction: TextInputAction.done,
                     prefixIcon: Icons.lock_outline_rounded,

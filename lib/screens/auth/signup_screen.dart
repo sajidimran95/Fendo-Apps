@@ -27,6 +27,8 @@ class _SignupScreenState extends State<SignupScreen>
   bool _obscure = true;
   bool _obscureConfirm = true;
   bool _loading = false;
+  bool _showPasswordRules = false;
+  String _passwordDraft = '';
 
   late final AnimationController _enter;
 
@@ -94,7 +96,11 @@ class _SignupScreenState extends State<SignupScreen>
       if (apiMsg != null && apiMsg.isNotEmpty) {
         showApiMessage(context, apiMsg);
       }
-      _goToOtp(email);
+      final otp = result['otp']?.toString();
+      _goToOtp(
+        email,
+        initialOtp: (otp != null && otp.length >= 4) ? otp : null,
+      );
     } on ApiException catch (e) {
       debugPrint('REGISTER ApiException: ${e.statusCode} ${e.displayMessage}');
       if (!mounted) return;
@@ -108,7 +114,7 @@ class _SignupScreenState extends State<SignupScreen>
       if (emailTaken) {
         showApiMessage(
           context,
-          'This email is already registered. Enter the OTP sent to your email.',
+          'This email is already registered. Enter the verify code from your email.',
         );
         _goToOtp(email);
         return;
@@ -123,12 +129,13 @@ class _SignupScreenState extends State<SignupScreen>
     }
   }
 
-  void _goToOtp(String email) {
+  void _goToOtp(String email, {String? initialOtp}) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => OtpVerifyScreen(
           email: email,
           purpose: OtpPurpose.register,
+          initialOtp: initialOtp,
         ),
       ),
     );
@@ -201,7 +208,7 @@ class _SignupScreenState extends State<SignupScreen>
                         begin: 0.1,
                         end: 0.5,
                         child: Text(
-                          'Password needs 8+ chars, upper, lower, and a number.',
+                          'Split expenses with friends in minutes.',
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                       ),
@@ -226,7 +233,7 @@ class _SignupScreenState extends State<SignupScreen>
                         child: AuthTextField(
                           controller: _emailCtrl,
                           label: 'Email',
-                          hint: 'you@email.com',
+                          hint: 'Enter your email',
                           keyboardType: TextInputType.emailAddress,
                           textInputAction: TextInputAction.next,
                           prefixIcon: Icons.mail_outline_rounded,
@@ -254,10 +261,16 @@ class _SignupScreenState extends State<SignupScreen>
                         child: AuthTextField(
                           controller: _passwordCtrl,
                           label: 'Password',
-                          hint: 'e.g. Password1',
+                          hint: '...........',
                           obscureText: _obscure,
                           textInputAction: TextInputAction.next,
                           prefixIcon: Icons.lock_outline_rounded,
+                          onChanged: (value) {
+                            setState(() {
+                              _passwordDraft = value;
+                              _showPasswordRules = value.isNotEmpty;
+                            });
+                          },
                           suffix: IconButton(
                             onPressed: () =>
                                 setState(() => _obscure = !_obscure),
@@ -271,6 +284,10 @@ class _SignupScreenState extends State<SignupScreen>
                           ),
                         ),
                       ),
+                      if (_showPasswordRules) ...[
+                        const SizedBox(height: 10),
+                        _PasswordRulesHint(password: _passwordDraft),
+                      ],
                       const SizedBox(height: 14),
                       FadeUp(
                         animation: _enter,
@@ -279,7 +296,7 @@ class _SignupScreenState extends State<SignupScreen>
                         child: AuthTextField(
                           controller: _confirmCtrl,
                           label: 'Confirm password',
-                          hint: 'Repeat password',
+                          hint: '...........',
                           obscureText: _obscureConfirm,
                           textInputAction: TextInputAction.done,
                           prefixIcon: Icons.lock_outline_rounded,
@@ -344,6 +361,71 @@ class _SignupScreenState extends State<SignupScreen>
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _PasswordRulesHint extends StatelessWidget {
+  const _PasswordRulesHint({required this.password});
+
+  final String password;
+
+  @override
+  Widget build(BuildContext context) {
+    final rules = <({String label, bool ok})>[
+      (label: 'At least 8 characters', ok: password.length >= 8),
+      (label: '1 capital letter (A–Z)', ok: RegExp(r'[A-Z]').hasMatch(password)),
+      (label: '1 lowercase letter (a–z)', ok: RegExp(r'[a-z]').hasMatch(password)),
+      (label: '1 number (0–9)', ok: RegExp(r'[0-9]').hasMatch(password)),
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: AppColors.mintWash.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.7)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Password rules',
+            style: GoogleFonts.manrope(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: AppColors.forestSoft,
+            ),
+          ),
+          const SizedBox(height: 6),
+          ...rules.map((r) {
+            return Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    r.ok ? Icons.check_circle_rounded : Icons.circle_outlined,
+                    size: 16,
+                    color: r.ok ? AppColors.mint : AppColors.textMuted,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      r.label,
+                      style: GoogleFonts.manrope(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: r.ok ? AppColors.forest : AppColors.textMuted,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
       ),
     );
   }
