@@ -124,13 +124,8 @@ class ApiClient {
     String path, {
     required FormData data,
   }) {
-    return _guard(
-      () => _dio.post(
-        path,
-        data: data,
-        options: Options(contentType: 'multipart/form-data'),
-      ),
-    );
+    // Do not set Content-Type manually — Dio must add the multipart boundary.
+    return _guard(() => _dio.post(path, data: data));
   }
 
   Future<Response<dynamic>> _guard(

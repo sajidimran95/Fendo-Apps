@@ -90,14 +90,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
-    final ext = file.name.split('.').last.toLowerCase();
+    var fileName = file.name.trim();
+    if (fileName.isEmpty) {
+      fileName = file.path.split(RegExp(r'[\\/]')).last;
+    }
+    var ext = fileName.contains('.')
+        ? fileName.split('.').last.toLowerCase()
+        : '';
     if (!['jpg', 'jpeg', 'png', 'webp'].contains(ext)) {
-      if (!mounted) return;
-      showApiError(
-        context,
-        ApiException(message: 'Use jpg, png, or webp'),
-      );
-      return;
+      // Image picker sometimes returns no extension — default jpeg.
+      ext = 'jpg';
+      fileName = 'avatar.jpg';
     }
 
     if (kIsWeb) {
@@ -117,15 +120,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final current = AuthController.instance.user;
       final user = await AuthController.instance.userApi.uploadAvatar(
         filePath: file.path,
-        fileName: file.name,
+        fileName: fileName,
         current: current,
       );
       AuthController.instance.setUser(user);
       if (!mounted) return;
       setState(() {
+        // Prefer server URL so we confirm it really saved.
+        _localAvatarPath = null;
         _avatarCacheBust = DateTime.now().millisecondsSinceEpoch;
       });
-      showApiMessage(context, 'Avatar saved');
+      final saved = user.avatar != null && user.avatar!.trim().isNotEmpty;
+      showApiMessage(
+        context,
+        saved ? 'Avatar saved' : 'Upload finished but avatar path missing',
+      );
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() => _localAvatarPath = null);
@@ -139,15 +148,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  ImageProvider? _avatarImage(String? avatarPath) {
+  Widget _buildAvatarChild({
+    required String? avatarPath,
+    required String initial,
+  }) {
+    final initialText = Text(
+      initial,
+      style: GoogleFonts.sora(
+        fontSize: 26,
+        fontWeight: FontWeight.w800,
+        color: AppColors.mint,
+      ),
+    );
+
     if (_localAvatarPath != null &&
         _localAvatarPath!.isNotEmpty &&
         !kIsWeb) {
-      return FileImage(File(_localAvatarPath!));
+      return Image.file(
+        File(_localAvatarPath!),
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => Center(child: initialText),
+      );
     }
+
     final url = resolveMediaUrl(avatarPath, cacheBust: _avatarCacheBust);
-    if (url == null || url.isEmpty) return null;
-    return NetworkImage(url);
+    if (url == null || url.isEmpty) {
+      return Center(child: initialText);
+    }
+
+    return Image.network(
+      url,
+      fit: BoxFit.cover,
+      errorBuilder: (_, _, _) => Center(child: initialText),
+      loadingBuilder: (context, child, progress) {
+        if (progress == null) return child;
+        return const Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: AppColors.mint,
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -160,7 +206,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final email = user?.email ?? '';
         final phone = user?.phone;
         final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-        final avatarImage = _avatarImage(user?.avatar);
 
         return Scaffold(
           backgroundColor: AppColors.canvas,
@@ -183,17 +228,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             CircleAvatar(
                               radius: 34,
                               backgroundColor: AppColors.mintWash,
-                              backgroundImage: avatarImage,
-                              child: avatarImage == null
-                                  ? Text(
-                                      initial,
-                                      style: GoogleFonts.sora(
-                                        fontSize: 26,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.mint,
-                                      ),
-                                    )
-                                  : null,
+                              child: ClipOval(
+                                child: SizedBox(
+                                  width: 68,
+                                  height: 68,
+                                  child: _buildAvatarChild(
+                                    avatarPath: user?.avatar,
+                                    initial: initial,
+                                  ),
+                                ),
+                              ),
                             ),
                             Positioned(
                               right: 0,
