@@ -144,39 +144,78 @@ class _SignupScreenState extends State<SignupScreen>
       // Do NOT treat every 422 as phone-taken (that broke resend → "no account").
 
       if (phoneTaken) {
-        try {
-          FirebasePhoneOtp.prepareFreshRequest(keepResendToken: false);
-          final resolution = await AuthController.instance
-              .resolvePhoneTakenConflict(phone);
-          if (!mounted) return;
+        // Never leave a pending OTP that would auto-send SMS.
+        FirebasePhoneOtp.clear();
 
-          switch (resolution) {
-            case PhoneTakenResolution.unverifiedPending:
-              showApiMessage(context, 'Enter the code sent to your phone.');
-              _goToOtp(phone, purpose: OtpPurpose.register);
-              return;
-            case PhoneTakenResolution.closedAccount:
-              showApiMessage(
-                context,
-                'This number belongs to a closed account and cannot be '
-                'registered again yet. Contact support to free the number.',
-              );
-              return;
-            case PhoneTakenResolution.activeAccount:
-              showApiMessage(
-                context,
-                'This number is already registered. Please log in. '
-                'If you deleted this account, contact support to free the number.',
-              );
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
-              );
-              return;
-          }
-        } on ApiException catch (resendErr) {
-          debugPrint('REGISTER otp after taken failed: $resendErr');
+        // Explicit "already verified" from register → login only.
+        if (AuthController.instance.isAlreadyVerifiedAccount(e)) {
+          _goLoginAlreadyRegistered();
+          return;
+        }
+
+        // Probe: active verified accounts can attempt login; pending need OTP.
+        try {
+          await AuthController.instance.login(
+            phone: phone,
+            password: password,
+          );
+          // Same password works → account is already active & verified.
+          await AuthController.instance.clearSession();
           if (!mounted) return;
-          if (AuthController.instance.isAccountMissing(resendErr)) {
+          _goLoginAlreadyRegistered();
+          return;
+        } on ApiException catch (loginErr) {
+          if (!mounted) return;
+          final loginMsg = loginErr.displayMessage.toLowerCase();
+          final needsVerify = loginErr.isForbidden ||
+              loginMsg.contains('verify your phone') ||
+              loginMsg.contains('phone not verified') ||
+              loginMsg.contains('not verified') ||
+              loginMsg.contains('please verify');
+
+          if (needsVerify) {
+            // Registered but not verified → OTP only.
+            try {
+              final resolution = await AuthController.instance
+                  .resolvePhoneTakenConflict(phone);
+              if (!mounted) return;
+              if (resolution == PhoneTakenResolution.unverifiedPending) {
+                showApiMessage(
+                  context,
+                  'Enter the code sent to your phone.',
+                );
+                _goToOtp(phone, purpose: OtpPurpose.register);
+                return;
+              }
+              if (resolution == PhoneTakenResolution.closedAccount) {
+                showApiMessage(
+                  context,
+                  'This number belongs to a closed account and cannot be '
+                  'registered again yet. Contact support to free the number.',
+                );
+                return;
+              }
+              FirebasePhoneOtp.clear();
+              _goLoginAlreadyRegistered();
+              return;
+            } on ApiException catch (resendErr) {
+              debugPrint('REGISTER otp after taken failed: $resendErr');
+              if (!mounted) return;
+              FirebasePhoneOtp.clear();
+              if (AuthController.instance.isAccountMissing(resendErr)) {
+                showApiMessage(
+                  context,
+                  'This number belongs to a closed account and cannot be '
+                  'registered again yet. Contact support to free the number.',
+                );
+                return;
+              }
+              _goLoginAlreadyRegistered();
+              return;
+            }
+          }
+
+          if (AuthController.instance.isAccountMissing(loginErr)) {
             showApiMessage(
               context,
               'This number belongs to a closed account and cannot be '
@@ -184,16 +223,12 @@ class _SignupScreenState extends State<SignupScreen>
             );
             return;
           }
-          showApiMessage(
-            context,
-            'This number is already registered. Please log in. '
-            'If you deleted this account, contact support to free the number.',
-          );
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const LoginScreen()),
-          );
+
+          // Wrong password / active account → login page, do NOT send code.
+          FirebasePhoneOtp.clear();
+          _goLoginAlreadyRegistered();
+          return;
         }
-        return;
       }
       showApiError(context, e);
     } catch (e, st) {
@@ -203,6 +238,16 @@ class _SignupScreenState extends State<SignupScreen>
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _goLoginAlreadyRegistered() {
+    showApiMessage(
+      context,
+      'This number is already registered. Please log in.',
+    );
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+    );
   }
 
   void _goToOtp(String phone, {OtpPurpose purpose = OtpPurpose.register}) {

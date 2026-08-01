@@ -189,6 +189,7 @@ class AuthController extends ChangeNotifier {
         m.contains('already been verified') ||
         m.contains('phone already verified') ||
         m.contains('already active') ||
+        m.contains('account already exists') ||
         (m.contains('already registered') && !m.contains('pending')) ||
         (m.contains('already exists') && m.contains('verified'));
   }
@@ -202,16 +203,17 @@ class AuthController extends ChangeNotifier {
       await resendOtp(phone: phone, purpose: 'register', awaitSms: false);
       final hasOtp = FirebasePhoneOtp.pendingApiOtp != null &&
           FirebasePhoneOtp.pendingApiOtp!.isNotEmpty;
-      return hasOtp
-          ? PhoneTakenResolution.unverifiedPending
-          : PhoneTakenResolution.activeAccount;
+      if (!hasOtp) {
+        FirebasePhoneOtp.clear();
+        return PhoneTakenResolution.activeAccount;
+      }
+      return PhoneTakenResolution.unverifiedPending;
     } on ApiException catch (e) {
+      FirebasePhoneOtp.clear();
       if (isAccountMissing(e)) {
         return PhoneTakenResolution.closedAccount;
       }
       if (isAlreadyVerifiedAccount(e) || _resendMeansVerifiedAccount(e)) {
-        // Soft-deleted phones may also look like "no pending". Callers should
-        // show a closed-account hint if login/forgot then fail for this number.
         return PhoneTakenResolution.activeAccount;
       }
       rethrow;
