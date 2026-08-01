@@ -12,11 +12,11 @@ import 'login_screen.dart';
 class ResetPasswordScreen extends StatefulWidget {
   const ResetPasswordScreen({
     super.key,
-    required this.email,
+    required this.phone,
     required this.otp,
   });
 
-  final String email;
+  final String phone;
   final String otp;
 
   @override
@@ -65,7 +65,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     setState(() => _loading = true);
     try {
       final msg = await AuthController.instance.resetPassword(
-        email: widget.email,
+        phone: widget.phone,
         otp: widget.otp,
         password: password,
         passwordConfirmation: confirm,
@@ -122,7 +122,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Choose a new password for ${widget.email}.',
+                  'Choose a new password for ${widget.phone}.',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 28),

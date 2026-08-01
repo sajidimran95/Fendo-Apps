@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "1039680987",
+    "project_id": "fendo-apps",
+    "storage_bucket": "fendo-apps.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1039680987:android:06289eab53e72b6c9893fe",
+        "android_client_info": {
+          "package_name": "com.fendo.fendo"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1039680987-np3fkv1tm697kl2n38781htvisgicko5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.fendo.fendo",
+            "certificate_hash": "11cd195b34034c784cce6bf7fc1f7fb3b59c325b"
+          }
+        },
+        {
+          "client_id": "1039680987-ivftn2rov0hbogc2k8f75pebodfpqevj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCAdnBSlM-jSfuOcAbAYJZ2r-FPMohA7LI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1039680987-ivftn2rov0hbogc2k8f75pebodfpqevj.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

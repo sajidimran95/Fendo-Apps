@@ -6,8 +6,10 @@ import '../../navigation/app_nav.dart';
 import '../../services/auth_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
+import '../../utils/phone_number.dart';
 import '../../widgets/auth/auth_background.dart';
 import '../../widgets/auth/auth_widgets.dart';
+import '../../widgets/auth/phone_country_field.dart';
 import 'forgot_password_screen.dart';
 import 'otp_verify_screen.dart';
 import 'signup_screen.dart';
@@ -21,7 +23,8 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
-  final _emailCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _phoneKey = GlobalKey<PhoneCountryFieldState>();
   final _passwordCtrl = TextEditingController();
   bool _obscure = true;
   bool _loading = false;
@@ -40,52 +43,56 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   void dispose() {
     _enter.dispose();
-    _emailCtrl.dispose();
+    _phoneCtrl.dispose();
     _passwordCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _onLogin() async {
-    final email = _emailCtrl.text.trim();
+    final phone = _phoneKey.currentState?.normalizedPhone() ??
+        PhoneNumber.normalize(_phoneCtrl.text);
     final password = _passwordCtrl.text;
 
-    if (email.isEmpty || password.isEmpty) {
+    if (phone.isEmpty || password.isEmpty) {
       showApiError(
         context,
-        ApiException(message: 'Enter email and password'),
+        ApiException(message: 'Enter phone number and password'),
+      );
+      return;
+    }
+    if (!PhoneNumber.looksValid(phone)) {
+      showApiError(
+        context,
+        ApiException(message: 'Enter a valid phone number'),
       );
       return;
     }
 
     setState(() => _loading = true);
     try {
-      await AuthController.instance.login(email: email, password: password);
+      await AuthController.instance.login(phone: phone, password: password);
       if (!mounted) return;
       goToHome(context);
     } on ApiException catch (e) {
       if (!mounted) return;
       final msg = e.displayMessage.toLowerCase();
       final needsVerify = e.isForbidden ||
-          msg.contains('verify your email') ||
-          msg.contains('email not verified') ||
+          msg.contains('verify your phone') ||
+          msg.contains('phone not verified') ||
           msg.contains('please verify');
       if (needsVerify) {
         showApiMessage(
           context,
-          'Enter the verify code sent to your email',
+          'Enter the code sent to your phone',
         );
-        // Best-effort resend so a code is available.
         try {
-          await AuthController.instance.resendOtp(
-            email: email,
-            purpose: 'register',
-          );
+          await AuthController.instance.preparePhoneOtp(phone);
         } catch (_) {}
         if (!mounted) return;
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => OtpVerifyScreen(
-              email: email,
+              phone: phone,
               purpose: OtpPurpose.register,
             ),
           ),
@@ -161,7 +168,7 @@ class _LoginScreenState extends State<LoginScreen>
                   begin: 0.18,
                   end: 0.55,
                   child: Text(
-                    'Sign in with your Fendo account.',
+                    'Sign in with your mobile number.',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
@@ -170,14 +177,10 @@ class _LoginScreenState extends State<LoginScreen>
                   animation: _enter,
                   begin: 0.28,
                   end: 0.7,
-                  child: AuthTextField(
-                    controller: _emailCtrl,
-                    label: 'Email',
-                    hint: 'Enter your email',
-                    keyboardType: TextInputType.emailAddress,
+                  child: PhoneCountryField(
+                    key: _phoneKey,
+                    controller: _phoneCtrl,
                     textInputAction: TextInputAction.next,
-                    prefixIcon: Icons.mail_outline_rounded,
-                    autofillHints: const [AutofillHints.email],
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -220,15 +223,22 @@ class _LoginScreenState extends State<LoginScreen>
                           ),
                         );
                       },
-                      child: const Text('Forgot password?'),
+                      child: Text(
+                        'Forgot password?',
+                        style: GoogleFonts.manrope(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.mintDim,
+                        ),
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 8),
                 FadeUp(
                   animation: _enter,
-                  begin: 0.45,
-                  end: 0.88,
+                  begin: 0.46,
+                  end: 0.9,
                   child: AuthPrimaryButton(
                     label: 'Sign in',
                     loading: _loading,
@@ -238,31 +248,58 @@ class _LoginScreenState extends State<LoginScreen>
                 const SizedBox(height: 28),
                 FadeUp(
                   animation: _enter,
-                  begin: 0.52,
-                  end: 0.92,
-                  child: const AuthDivider(),
-                ),
-                const SizedBox(height: 18),
-                FadeUp(
-                  animation: _enter,
-                  begin: 0.58,
-                  end: 0.96,
-                  child: AuthSocialRow(
-                    onGoogle: _loading ? () {} : _socialComingSoon,
-                    onApple: _loading ? () {} : _socialComingSoon,
+                  begin: 0.55,
+                  end: 0.95,
+                  child: Row(
+                    children: [
+                      const Expanded(child: Divider()),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          'or continue with',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                      const Expanded(child: Divider()),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 16),
                 FadeUp(
                   animation: _enter,
-                  begin: 0.65,
+                  begin: 0.6,
+                  end: 1,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _socialComingSoon,
+                          icon: const Icon(Icons.g_mobiledata_rounded, size: 28),
+                          label: const Text('Google'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _socialComingSoon,
+                          icon: const Icon(Icons.apple_rounded),
+                          label: const Text('Apple'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 28),
+                FadeUp(
+                  animation: _enter,
+                  begin: 0.7,
                   end: 1,
                   child: Center(
                     child: Wrap(
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
-                          'New to Fendo? ',
+                          "Don't have an account? ",
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                         GestureDetector(
@@ -274,7 +311,7 @@ class _LoginScreenState extends State<LoginScreen>
                             );
                           },
                           child: Text(
-                            'Create account',
+                            'Sign up',
                             style: GoogleFonts.manrope(
                               fontSize: 14,
                               fontWeight: FontWeight.w800,

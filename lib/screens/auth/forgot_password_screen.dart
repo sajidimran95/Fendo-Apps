@@ -5,8 +5,10 @@ import '../../core/network/api_exception.dart';
 import '../../services/auth_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
+import '../../utils/phone_number.dart';
 import '../../widgets/auth/auth_background.dart';
 import '../../widgets/auth/auth_widgets.dart';
+import '../../widgets/auth/phone_country_field.dart';
 import 'otp_verify_screen.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
@@ -18,7 +20,8 @@ class ForgotPasswordScreen extends StatefulWidget {
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
     with SingleTickerProviderStateMixin {
-  final _emailCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _phoneKey = GlobalKey<PhoneCountryFieldState>();
   bool _loading = false;
   late final AnimationController _enter;
 
@@ -34,30 +37,34 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
   @override
   void dispose() {
     _enter.dispose();
-    _emailCtrl.dispose();
+    _phoneCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _onSubmit() async {
-    final email = _emailCtrl.text.trim();
-    if (email.isEmpty) {
-      showApiError(context, ApiException(message: 'Enter your email'));
+    final phone = _phoneKey.currentState?.normalizedPhone() ??
+        PhoneNumber.normalize(_phoneCtrl.text);
+    if (phone.isEmpty) {
+      showApiError(context, ApiException(message: 'Enter your mobile number'));
+      return;
+    }
+    if (!PhoneNumber.looksValid(phone)) {
+      showApiError(
+        context,
+        ApiException(message: 'Enter a valid mobile number'),
+      );
       return;
     }
 
     setState(() => _loading = true);
     try {
-      final msg =
-          await AuthController.instance.forgotPassword(email: email);
+      await AuthController.instance.forgotPassword(phone: phone);
       if (!mounted) return;
-      showApiMessage(
-        context,
-        msg ?? 'If that email exists, a reset code was sent.',
-      );
+      showApiMessage(context, 'Enter the code sent to your phone.');
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => OtpVerifyScreen(
-            email: email,
+            phone: phone,
             purpose: OtpPurpose.resetPassword,
           ),
         ),
@@ -122,7 +129,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
                   begin: 0.2,
                   end: 0.65,
                   child: Text(
-                    'We’ll email a one-time code to reset your password.',
+                    'We’ll text a one-time code to reset your password.',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
@@ -131,13 +138,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
                   animation: _enter,
                   begin: 0.3,
                   end: 0.8,
-                  child: AuthTextField(
-                    controller: _emailCtrl,
-                    label: 'Email',
-                    hint: 'you@email.com',
-                    keyboardType: TextInputType.emailAddress,
+                  child: PhoneCountryField(
+                    key: _phoneKey,
+                    controller: _phoneCtrl,
                     textInputAction: TextInputAction.done,
-                    prefixIcon: Icons.mail_outline_rounded,
                     onFieldSubmitted: (_) => _onSubmit(),
                   ),
                 ),

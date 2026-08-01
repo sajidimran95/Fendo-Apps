@@ -3,28 +3,32 @@ import '../core/network/api_exception.dart';
 import '../models/auth_response.dart';
 import '../models/user_model.dart';
 
-/// Auth endpoints 1.1 – 1.10 from API docs.
+/// Auth endpoints — phone channel (Firebase SMS OTP) per API v1.0.4+.
 class AuthApi {
   AuthApi(this._client);
 
   final ApiClient _client;
 
-  /// 1.1 POST /auth/register
+  static const channelPhone = 'phone';
+
+  /// 1.1 POST /auth/register (phone; email optional)
   Future<Map<String, dynamic>> register({
     required String name,
-    required String email,
     required String password,
     required String passwordConfirmation,
-    String? phone,
+    required String phone,
+    String? email,
+    String channel = channelPhone,
   }) async {
     final res = await _client.post(
       '/auth/register',
       data: {
         'name': name,
-        'email': email,
+        'phone': phone,
         'password': password,
         'password_confirmation': passwordConfirmation,
-        if (phone != null && phone.isNotEmpty) 'phone': phone,
+        'channel': channel,
+        if (email != null && email.isNotEmpty) 'email': email,
       },
     );
     try {
@@ -39,50 +43,55 @@ class AuthApi {
     }
   }
 
-  /// 1.2 POST /auth/verify-otp
+  /// 1.2 POST /auth/verify-otp (phone)
   Future<AuthResponse> verifyOtp({
-    required String email,
+    required String phone,
     required String otp,
     required String purpose,
+    String channel = channelPhone,
   }) async {
     final res = await _client.post(
       '/auth/verify-otp',
       data: {
-        'email': email,
+        'phone': phone,
         'otp': otp,
         'purpose': purpose,
+        'channel': channel,
       },
     );
     return AuthResponse.fromJson(unwrapMap(res.data));
   }
 
-  /// 1.3 POST /auth/resend-otp
-  Future<String?> resendOtp({
-    required String email,
+  /// 1.3 POST /auth/resend-otp (phone) — returns map with `otp` for Firebase SMS.
+  Future<Map<String, dynamic>> resendOtp({
+    required String phone,
     required String purpose,
+    String channel = channelPhone,
   }) async {
     final res = await _client.post(
       '/auth/resend-otp',
       data: {
-        'email': email,
+        'phone': phone,
         'purpose': purpose,
+        'channel': channel,
       },
     );
-    final map = unwrapMap(res.data);
-    return map['message']?.toString();
+    return unwrapMap(res.data);
   }
 
-  /// 1.4 POST /auth/login
+  /// 1.4 POST /auth/login (phone)
   Future<AuthResponse> login({
-    required String email,
+    required String phone,
     required String password,
     String? deviceName,
+    String channel = channelPhone,
   }) async {
     final res = await _client.post(
       '/auth/login',
       data: {
-        'email': email,
+        'phone': phone,
         'password': password,
+        'channel': channel,
         if (deviceName != null && deviceName.isNotEmpty)
           'device_name': deviceName,
       },
@@ -106,30 +115,37 @@ class AuthApi {
     return UserModel.fromJson(Map<String, dynamic>.from(user));
   }
 
-  /// 1.7 POST /auth/forgot-password
-  Future<String?> forgotPassword({required String email}) async {
+  /// 1.7 POST /auth/forgot-password (phone)
+  Future<Map<String, dynamic>> forgotPassword({
+    required String phone,
+    String channel = channelPhone,
+  }) async {
     final res = await _client.post(
       '/auth/forgot-password',
-      data: {'email': email},
+      data: {
+        'phone': phone,
+        'channel': channel,
+      },
     );
-    final map = unwrapMap(res.data);
-    return map['message']?.toString();
+    return unwrapMap(res.data);
   }
 
-  /// 1.8 POST /auth/reset-password
+  /// 1.8 POST /auth/reset-password (phone)
   Future<String?> resetPassword({
-    required String email,
+    required String phone,
     required String otp,
     required String password,
     required String passwordConfirmation,
+    String channel = channelPhone,
   }) async {
     final res = await _client.post(
       '/auth/reset-password',
       data: {
-        'email': email,
+        'phone': phone,
         'otp': otp,
         'password': password,
         'password_confirmation': passwordConfirmation,
+        'channel': channel,
       },
     );
     final map = unwrapMap(res.data);

@@ -3,9 +3,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'core/firebase/firebase_bootstrap.dart';
 import 'core/network/api_http_overrides.dart';
 import 'navigation/auth_gate.dart';
 import 'services/auth_controller.dart';
+import 'services/ip_country_service.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 
@@ -20,6 +22,10 @@ Future<void> main() async {
       systemNavigationBarIconBrightness: Brightness.dark,
     ),
   );
+  await FirebaseBootstrap.init();
+  // Warm IP→country for phone dial code (non-blocking for UI).
+  // ignore: unawaited_futures
+  IpCountryService.instance.ensureLoaded();
   await AuthController.instance.bootstrap();
   runApp(const FendoApp());
 }

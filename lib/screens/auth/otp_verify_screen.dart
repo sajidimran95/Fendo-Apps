@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/firebase/firebase_phone_otp.dart';
 import '../../core/network/api_exception.dart';
 import '../../navigation/app_nav.dart';
 import '../../services/auth_controller.dart';
@@ -16,11 +19,11 @@ enum OtpPurpose { register, resetPassword }
 class OtpVerifyScreen extends StatefulWidget {
   const OtpVerifyScreen({
     super.key,
-    required this.email,
+    required this.phone,
     required this.purpose,
   });
 
-  final String email;
+  final String phone;
   final OtpPurpose purpose;
 
   @override
@@ -33,9 +36,13 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
       List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _nodes = List.generate(6, (_) => FocusNode());
   bool _loading = false;
-  int _resendSeconds = 60;
+  bool _smsSending = false;
+  String? _smsHint;
+  /// Isolated from setState so OTP fields (and keyboard) are not rebuilt.
+  final ValueNotifier<int> _resendSeconds = ValueNotifier<int>(0);
 
   late final AnimationController _enter;
+  Timer? _resendTimer;
 
   @override
   void initState() {
@@ -44,21 +51,127 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     )..forward();
+    // Always show countdown so Resend is not stuck / missing.
     _startResendTimer();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _nodes[0].requestFocus();
+      _ensureOtpAndSendSms();
+    });
+  }
+
+  /// Makes sure we have an API OTP, then sends Firebase SMS.
+  Future<void> _ensureOtpAndSendSms({bool isResend = false}) async {
+      setState(() {
+        _smsSending = true;
+        _smsHint = 'Sending code…';
+      });
+
+    try {
+      if (FirebasePhoneOtp.pendingApiOtp == null ||
+          FirebasePhoneOtp.pendingApiOtp!.isEmpty) {
+        if (widget.purpose == OtpPurpose.resetPassword) {
+          await AuthController.instance.forgotPassword(
+            phone: widget.phone,
+            awaitSms: false,
+          );
+        } else {
+          await AuthController.instance.preparePhoneOtp(widget.phone);
+        }
+      }
+
+      final apiOtp = FirebasePhoneOtp.pendingApiOtp;
+      if (apiOtp == null || apiOtp.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _smsSending = false;
+          _smsHint = 'Could not send the code. Please tap Resend.';
+        });
+        _resendSeconds.value = 0;
+        return;
+      }
+
+      if (!isResend &&
+          FirebasePhoneOtp.smsWasSent &&
+          FirebasePhoneOtp.pendingPhone == widget.phone) {
+        if (!mounted) return;
+        setState(() {
+          _smsSending = false;
+          _smsHint = 'Code sent. Please check your messages.';
+        });
+        _startResendTimer();
+        return;
+      }
+
+      // Never signOut here — that breaks Firebase reCAPTCHA ("missing initial state").
+      FirebasePhoneOtp.prepareFreshRequest(keepResendToken: isResend);
+
+      final result = await FirebasePhoneOtp.startSms(
+        phone: widget.phone,
+        apiOtp: apiOtp,
+        isResend: isResend,
+      );
+      if (!mounted) return;
+
+      setState(() {
+        _smsSending = false;
+        if (result.sent) {
+          _smsHint = 'Code sent. Please check your messages.';
+        } else {
+          _smsHint = sanitizeUserMessage(
+            result.error,
+            fallback: 'Could not send the code. Please tap Resend.',
+          );
+        }
+      });
+      if (result.sent) {
+        _startResendTimer();
+      } else {
+        _resendSeconds.value = 0;
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _smsSending = false;
+        _smsHint = sanitizeUserMessage(
+          e.displayMessage,
+          fallback: 'Could not send the code. Please tap Resend.',
+        );
+      });
+      _resendSeconds.value = 0;
+      showApiError(context, e);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _smsSending = false;
+        _smsHint = 'Could not send the code. Please tap Resend.';
+      });
+      _resendSeconds.value = 0;
+    }
   }
 
   void _startResendTimer() {
-    _resendSeconds = 60;
-    Future.doWhile(() async {
-      await Future<void>.delayed(const Duration(seconds: 1));
-      if (!mounted) return false;
-      setState(() => _resendSeconds--);
-      return _resendSeconds > 0;
+    _resendTimer?.cancel();
+    _resendSeconds.value = 60;
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      final next = _resendSeconds.value - 1;
+      if (next <= 0) {
+        _resendSeconds.value = 0;
+        timer.cancel();
+        return;
+      }
+      _resendSeconds.value = next;
     });
   }
 
   @override
   void dispose() {
+    _resendTimer?.cancel();
+    _resendSeconds.dispose();
     _enter.dispose();
     for (final c in _digits) {
       c.dispose();
@@ -69,33 +182,89 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
     super.dispose();
   }
 
+  void _onDigitChanged(int i, String v) {
+    if (v.length > 1) {
+      // Paste: distribute digits across boxes without losing keyboard.
+      final chars = v.replaceAll(RegExp(r'\D'), '');
+      for (var j = 0; j < 6 && j < chars.length; j++) {
+        _digits[j].text = chars[j];
+      }
+      final focusAt = chars.length.clamp(0, 5);
+      _nodes[focusAt].requestFocus();
+      return;
+    }
+    if (v.isNotEmpty && i < 5) {
+      _nodes[i + 1].requestFocus();
+    } else if (v.isEmpty && i > 0) {
+      _nodes[i - 1].requestFocus();
+    }
+  }
+
   String get _otpCode => _digits.map((c) => c.text).join();
 
+  /// User must type the SMS / Firebase test code. Never auto-filled.
+  /// After Firebase confirms SMS, API is verified with stored server OTP.
+  Future<String> _resolveApiOtp(String entered) async {
+    if (FirebasePhoneOtp.smsWasSent) {
+      final ok = await FirebasePhoneOtp.confirmSmsCode(entered);
+      if (!ok) {
+        throw ApiException(
+          message: 'Invalid code. Please check and try again.',
+        );
+      }
+      final serverOtp = FirebasePhoneOtp.pendingApiOtp;
+      if (serverOtp == null || serverOtp.isEmpty) {
+        throw ApiException(
+          message: 'Code expired. Please tap Resend.',
+        );
+      }
+      return serverOtp;
+    }
+
+    // No Firebase SMS session — verify API with what the user typed.
+    return entered;
+  }
+
   Future<void> _onVerify() async {
-    final otp = _otpCode;
-    if (otp.length < 6) {
+    final entered = _otpCode;
+    if (entered.length < 6) {
       showApiError(context, ApiException(message: 'Enter the 6-digit code'));
       return;
     }
 
     if (widget.purpose == OtpPurpose.resetPassword) {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => ResetPasswordScreen(
-            email: widget.email,
-            otp: otp,
+      setState(() => _loading = true);
+      try {
+        final apiOtp = await _resolveApiOtp(entered);
+        if (!mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ResetPasswordScreen(
+              phone: widget.phone,
+              otp: apiOtp,
+            ),
           ),
-        ),
-      );
+        );
+      } on ApiException catch (e) {
+        if (!mounted) return;
+        showApiError(context, e);
+      } catch (e) {
+        if (!mounted) return;
+        showApiError(context, e);
+      } finally {
+        if (mounted) setState(() => _loading = false);
+      }
       return;
     }
 
     setState(() => _loading = true);
     try {
+      final apiOtp = await _resolveApiOtp(entered);
       await AuthController.instance.verifyRegisterOtp(
-        email: widget.email,
-        otp: otp,
+        phone: widget.phone,
+        otp: apiOtp,
       );
+      FirebasePhoneOtp.clear();
       if (!mounted) return;
       goToHome(context);
     } on ApiException catch (e) {
@@ -110,23 +279,69 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
   }
 
   Future<void> _onResend() async {
-    if (_resendSeconds > 0) return;
+    if (_resendSeconds.value > 0 || _smsSending) return;
+
+    setState(() {
+      _smsSending = true;
+      _smsHint = 'Sending code…';
+    });
 
     try {
+      // Fresh API OTP; keep Firebase force-resend token when possible.
+      FirebasePhoneOtp.pendingApiOtp = null;
+      FirebasePhoneOtp.pendingPhone = widget.phone;
+
       if (widget.purpose == OtpPurpose.resetPassword) {
-        await AuthController.instance.forgotPassword(email: widget.email);
-      } else {
-        await AuthController.instance.resendOtp(
-          email: widget.email,
-          purpose: 'register',
+        await AuthController.instance.forgotPassword(
+          phone: widget.phone,
+          awaitSms: false,
         );
+      } else {
+        try {
+          await AuthController.instance.resendOtp(
+            phone: widget.phone,
+            purpose: 'register',
+            awaitSms: false,
+          );
+        } on ApiException catch (e) {
+          final m = e.displayMessage.toLowerCase();
+          final fallback = m.contains('no account') ||
+              m.contains('not found') ||
+              m.contains('already verified') ||
+              m.contains('no pending');
+          if (!fallback) rethrow;
+          await AuthController.instance.forgotPassword(
+            phone: widget.phone,
+            awaitSms: false,
+          );
+        }
       }
+
       if (!mounted) return;
-      showApiMessage(context, 'Code resent');
-      _startResendTimer();
+      for (final c in _digits) {
+        c.clear();
+      }
+      _nodes[0].requestFocus();
+
+      await _ensureOtpAndSendSms(isResend: true);
     } on ApiException catch (e) {
       if (!mounted) return;
+      setState(() {
+        _smsSending = false;
+        _smsHint = sanitizeUserMessage(
+          e.displayMessage,
+          fallback: 'Could not send the code. Please try again.',
+        );
+      });
+      _resendSeconds.value = 0;
       showApiError(context, e);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _smsSending = false;
+        _smsHint = 'Could not send the code. Please try again.';
+      });
+      _resendSeconds.value = 0;
     }
   }
 
@@ -163,7 +378,7 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
                   begin: 0.1,
                   end: 0.55,
                   child: Text(
-                    'Check your\ninbox',
+                    'Check your\nphone',
                     style: GoogleFonts.sora(
                       fontSize: 36,
                       fontWeight: FontWeight.w800,
@@ -178,9 +393,27 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
                   animation: _enter,
                   begin: 0.18,
                   end: 0.65,
-                  child: Text(
-                    'Enter the 6-digit code we sent to ${widget.email}.',
-                    style: Theme.of(context).textTheme.bodyMedium,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Enter the 6-digit code sent to your phone.',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      if (_smsHint != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          _smsHint!,
+                          style: GoogleFonts.manrope(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: _smsSending
+                                ? AppColors.mintDim
+                                : AppColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 const SizedBox(height: 36),
@@ -194,10 +427,14 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
                       return SizedBox(
                         width: 48,
                         child: TextField(
+                          key: ValueKey('otp-digit-$i'),
                           controller: _digits[i],
                           focusNode: _nodes[i],
                           textAlign: TextAlign.center,
                           keyboardType: TextInputType.number,
+                          textInputAction: i < 5
+                              ? TextInputAction.next
+                              : TextInputAction.done,
                           maxLength: 1,
                           style: GoogleFonts.sora(
                             fontSize: 22,
@@ -206,18 +443,13 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
                           ),
                           inputFormatters: [
                             FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(1),
                           ],
                           decoration: const InputDecoration(
                             counterText: '',
                             contentPadding: EdgeInsets.symmetric(vertical: 14),
                           ),
-                          onChanged: (v) {
-                            if (v.isNotEmpty && i < 5) {
-                              _nodes[i + 1].requestFocus();
-                            } else if (v.isEmpty && i > 0) {
-                              _nodes[i - 1].requestFocus();
-                            }
-                          },
+                          onChanged: (v) => _onDigitChanged(i, v),
                         ),
                       );
                     }),
@@ -240,15 +472,28 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
                   begin: 0.5,
                   end: 1,
                   child: Center(
-                    child: _resendSeconds > 0
-                        ? Text(
-                            'Resend in ${_resendSeconds}s',
+                    child: ListenableBuilder(
+                      listenable: _resendSeconds,
+                      builder: (context, _) {
+                        final seconds = _resendSeconds.value;
+                        if (_smsSending) {
+                          return Text(
+                            'Sending…',
                             style: Theme.of(context).textTheme.bodySmall,
-                          )
-                        : TextButton(
-                            onPressed: _onResend,
-                            child: const Text('Resend code'),
-                          ),
+                          );
+                        }
+                        if (seconds > 0) {
+                          return Text(
+                            'Resend in ${seconds}s',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          );
+                        }
+                        return TextButton(
+                          onPressed: _onResend,
+                          child: const Text('Resend code'),
+                        );
+                      },
+                    ),
                   ),
                 ),
               ],

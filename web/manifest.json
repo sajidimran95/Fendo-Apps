@@ -1,6 +1,6 @@
 {
-    "name": "fendo",
-    "short_name": "fendo",
+    "name": "Fendo",
+    "short_name": "Fendo",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#7B61FF",

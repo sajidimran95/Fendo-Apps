@@ -360,7 +360,7 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
               try {
                 final phoneOnly =
                     await GroupsController.instance.inviteByPhone(
-                  widget.groupId,
+        widget.groupId,
                   phones: addPhones.toList(),
                 );
                 added += phoneOnly.addedCount;
@@ -411,7 +411,7 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
       }
 
       setState(() {
-        _emails.clear();
+      _emails.clear();
         _phones.clear();
         _selectedLocalIds.clear();
       });
@@ -450,16 +450,16 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
         decoration: const BoxDecoration(gradient: AppColors.heroWash),
         child: SafeArea(
           child: Column(
-            children: [
-              AppHeader(
-                title: 'Invite',
+          children: [
+            AppHeader(
+              title: 'Invite',
                 subtitle: 'Email, link, or contacts',
-                onBack: () => Navigator.pop(context),
-              ),
+              onBack: () => Navigator.pop(context),
+            ),
               Expanded(
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-                  children: [
+                children: [
                     Text(
                       'Add by email or mobile',
                       style: GoogleFonts.sora(
@@ -477,12 +477,12 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    AuthTextField(
-                      controller: _emails,
-                      label: 'Emails',
-                      hint: 'a@mail.com, b@mail.com',
-                      keyboardType: TextInputType.emailAddress,
-                    ),
+                  AuthTextField(
+                    controller: _emails,
+                    label: 'Emails',
+                    hint: 'a@mail.com, b@mail.com',
+                    keyboardType: TextInputType.emailAddress,
+                  ),
                     const SizedBox(height: 12),
                     AuthTextField(
                       controller: _phones,
@@ -500,69 +500,69 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    SoftTile(
+            SoftTile(
                       margin: EdgeInsets.zero,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (_inviteLink == null)
-                            Text(
-                              'Generate a link others can use to join.',
-                              style: GoogleFonts.manrope(
-                                color: AppColors.textSecondary,
-                              ),
-                            )
-                          else ...[
-                            SelectableText(
-                              _inviteLink!,
-                              style: GoogleFonts.manrope(
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.forest,
-                              ),
-                            ),
-                            if (_inviteToken != null) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                'Token: $_inviteToken',
-                                style: GoogleFonts.manrope(
-                                  fontSize: 12,
-                                  color: AppColors.textMuted,
-                                ),
-                              ),
-                            ],
-                            if (_expiresAt != null) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                'Expires: $_expiresAt',
-                                style: GoogleFonts.manrope(
-                                  fontSize: 12,
-                                  color: AppColors.textMuted,
-                                ),
-                              ),
-                            ],
-                            const SizedBox(height: 12),
-                            TextButton.icon(
-                              onPressed: () async {
-                                await Clipboard.setData(
-                                  ClipboardData(text: _inviteLink!),
-                                );
-                                if (!context.mounted) return;
-                                showApiMessage(context, 'Link copied');
-                              },
-                              icon: const Icon(Icons.copy_rounded),
-                              label: const Text('Copy link'),
-                            ),
-                          ],
-                          const SizedBox(height: 8),
-                          AuthPrimaryButton(
-                            label: _inviteLink == null
-                                ? 'Create invite link'
-                                : 'Refresh link',
-                            loading: _linking,
-                            onPressed: _linking ? null : _createLink,
-                          ),
-                        ],
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_inviteLink == null)
+                    Text(
+                      'Generate a link others can use to join.',
+                      style: GoogleFonts.manrope(
+                        color: AppColors.textSecondary,
                       ),
+                    )
+                  else ...[
+                    SelectableText(
+                      _inviteLink!,
+                      style: GoogleFonts.manrope(
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.forest,
+                      ),
+                    ),
+                    if (_inviteToken != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Token: $_inviteToken',
+                        style: GoogleFonts.manrope(
+                          fontSize: 12,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ],
+                    if (_expiresAt != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Expires: $_expiresAt',
+                        style: GoogleFonts.manrope(
+                          fontSize: 12,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    TextButton.icon(
+                      onPressed: () async {
+                        await Clipboard.setData(
+                          ClipboardData(text: _inviteLink!),
+                        );
+                        if (!context.mounted) return;
+                        showApiMessage(context, 'Link copied');
+                      },
+                      icon: const Icon(Icons.copy_rounded),
+                      label: const Text('Copy link'),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  AuthPrimaryButton(
+                    label: _inviteLink == null
+                        ? 'Create invite link'
+                        : 'Refresh link',
+                    loading: _linking,
+                    onPressed: _linking ? null : _createLink,
+                  ),
+                ],
+              ),
                     ),
                     const SizedBox(height: 22),
                     Text(

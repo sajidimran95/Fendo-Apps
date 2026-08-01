@@ -1,7 +1,8 @@
 plugins {
     id("com.android.application")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    // Kotlin is provided by the Flutter Gradle Plugin (Built-in Kotlin).
     id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -15,21 +16,25 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.fendo.fendo"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // Firebase Auth Phone + Play Integrity require 23+.
+        minSdk = maxOf(flutter.minSdkVersion, 23)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
     buildTypes {
-        release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+        debug {
+            // Same keystore fingerprints registered in Firebase (SHA-1/256).
             signingConfig = signingConfigs.getByName("debug")
+        }
+        release {
+            // TODO: replace with upload keystore before Play Store production.
+            // Debug signing keeps SHA fingerprints matching Firebase for now.
+            signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }
@@ -42,4 +47,10 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Helps Play Integrity / Play Services path for Phone Auth (reduces reCAPTCHA).
+    implementation("com.google.android.gms:play-services-base:18.5.0")
+    implementation("com.google.android.gms:play-services-auth:21.3.0")
 }
