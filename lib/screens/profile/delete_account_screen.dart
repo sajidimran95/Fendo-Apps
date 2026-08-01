@@ -82,8 +82,10 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
             ),
             SoftTile(
               child: Text(
-                'This permanently deletes your Fendo account and data. '
-                'Type $_requiredPhrase and enter your password to continue.',
+                'This closes your Fendo account and removes your access. '
+                'Your phone number may need support to free it for a new '
+                'registration. Type $_requiredPhrase and enter your password '
+                'to continue.',
                 style: GoogleFonts.manrope(
                   color: AppColors.textSecondary,
                   height: 1.4,

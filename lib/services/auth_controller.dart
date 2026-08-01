@@ -168,6 +168,20 @@ class AuthController extends ChangeNotifier {
         m.contains('nothing to resend');
   }
 
+  /// Soft-deleted / closed account: login & forgot treat as missing,
+  /// but register uniqueness still holds the phone.
+  bool isAccountMissing(ApiException e) {
+    final m = e.displayMessage.toLowerCase();
+    return m.contains('no account') ||
+        m.contains('account not found') ||
+        m.contains('user not found') ||
+        m.contains('does not exist') ||
+        m.contains('don\'t have an account') ||
+        m.contains('do not have an account') ||
+        m.contains('no user found') ||
+        (m.contains('not found') && !m.contains('otp'));
+  }
+
   /// True when API says the phone is already fully verified / active account.
   bool isAlreadyVerifiedAccount(ApiException e) {
     final m = e.displayMessage.toLowerCase();
@@ -180,30 +194,46 @@ class AuthController extends ChangeNotifier {
   }
 
   /// After register says phone is taken:
-  /// - Unverified account → resend register OTP (returns true)
-  /// - Verified account → returns false (caller should go to login)
-  Future<bool> resendRegisterOtpIfUnverified(String phone) async {
+  /// - [PhoneTakenResolution.unverifiedPending] → open register OTP
+  /// - [PhoneTakenResolution.activeAccount] → go to login
+  /// - [PhoneTakenResolution.closedAccount] → phone stuck on soft-deleted user
+  Future<PhoneTakenResolution> resolvePhoneTakenConflict(String phone) async {
     try {
       await resendOtp(phone: phone, purpose: 'register', awaitSms: false);
-      return FirebasePhoneOtp.pendingApiOtp != null &&
+      final hasOtp = FirebasePhoneOtp.pendingApiOtp != null &&
           FirebasePhoneOtp.pendingApiOtp!.isNotEmpty;
+      return hasOtp
+          ? PhoneTakenResolution.unverifiedPending
+          : PhoneTakenResolution.activeAccount;
     } on ApiException catch (e) {
+      if (isAccountMissing(e)) {
+        return PhoneTakenResolution.closedAccount;
+      }
       if (isAlreadyVerifiedAccount(e) || _resendMeansVerifiedAccount(e)) {
-        return false;
+        // Soft-deleted phones may also look like "no pending". Callers should
+        // show a closed-account hint if login/forgot then fail for this number.
+        return PhoneTakenResolution.activeAccount;
       }
       rethrow;
     }
   }
 
+  /// After register says phone is taken:
+  /// - Unverified account → resend register OTP (returns true)
+  /// - Verified account → returns false (caller should go to login)
+  Future<bool> resendRegisterOtpIfUnverified(String phone) async {
+    final resolution = await resolvePhoneTakenConflict(phone);
+    return resolution == PhoneTakenResolution.unverifiedPending;
+  }
+
   bool _resendMeansVerifiedAccount(ApiException e) {
     final m = e.displayMessage.toLowerCase();
     // Resend register OTP is only for pending verification.
+    // Do NOT treat "no account" as verified — that is usually soft-delete.
     return m.contains('no pending') ||
         m.contains('nothing to resend') ||
         m.contains('already verified') ||
         m.contains('no otp pending') ||
-        // Some backends say "no account" for register-purpose when user is verified
-        // but phone was "taken" on register — treat as go-to-login.
         m.contains('cannot resend') ||
         m.contains('already completed');
   }
@@ -400,6 +430,22 @@ class AuthController extends ChangeNotifier {
     DashboardController.instance.clear();
     ActivityController.instance.clear();
     ContactsMatchService.clearCache();
+    await FirebasePhoneOtp.resetSession();
+    try {
+      await FirebasePhoneOtp.signOutQuietly();
+    } catch (_) {}
     notifyListeners();
   }
+}
+
+/// How to handle a phone that register rejected as already taken.
+enum PhoneTakenResolution {
+  /// Pending signup — continue to register OTP.
+  unverifiedPending,
+
+  /// Active verified account — send user to login.
+  activeAccount,
+
+  /// Soft-deleted / closed: phone still reserved, login/forgot unavailable.
+  closedAccount,
 }

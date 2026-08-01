@@ -44,6 +44,8 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
   late final AnimationController _enter;
   Timer? _resendTimer;
 
+  static const _resendCooldownSec = 60;
+
   @override
   void initState() {
     super.initState();
@@ -51,7 +53,7 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     )..forward();
-    // Always show countdown so Resend is not stuck / missing.
+    // Always start 60 → 59 → 58… so Resend stays locked until cooldown ends.
     _startResendTimer();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -62,10 +64,10 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
 
   /// Makes sure we have an API OTP, then sends Firebase SMS.
   Future<void> _ensureOtpAndSendSms({bool isResend = false}) async {
-      setState(() {
-        _smsSending = true;
-        _smsHint = 'Sending code…';
-      });
+    setState(() {
+      _smsSending = true;
+      _smsHint = 'Sending code…';
+    });
 
     try {
       if (FirebasePhoneOtp.pendingApiOtp == null ||
@@ -85,9 +87,9 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
         if (!mounted) return;
         setState(() {
           _smsSending = false;
-          _smsHint = 'Could not send the code. Please tap Resend.';
+          _smsHint = 'Could not send the code. Please wait and tap Resend.';
         });
-        _resendSeconds.value = 0;
+        // Keep cooldown running — do not unlock Resend early.
         return;
       }
 
@@ -99,7 +101,6 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
           _smsSending = false;
           _smsHint = 'Code sent. Please check your messages.';
         });
-        _startResendTimer();
         return;
       }
 
@@ -117,42 +118,48 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
         _smsSending = false;
         if (result.sent) {
           _smsHint = 'Code sent. Please check your messages.';
+        } else if (isPhoneTakenMessage(result.error ?? '')) {
+          _smsHint = 'This number is already registered. Please log in.';
         } else {
           _smsHint = sanitizeUserMessage(
             result.error,
-            fallback: 'Could not send the code. Please tap Resend.',
+            fallback: 'Could not send the code. Please wait and tap Resend.',
           );
         }
       });
-      if (result.sent) {
-        _startResendTimer();
-      } else {
-        _resendSeconds.value = 0;
+      if (isPhoneTakenMessage(result.error ?? '')) {
+        showApiError(
+          context,
+          ApiException(message: 'This number is already registered. Please log in.'),
+        );
       }
     } on ApiException catch (e) {
       if (!mounted) return;
+      final hint = isPhoneTakenMessage(e)
+          ? 'This number is already registered. Please log in.'
+          : sanitizeUserMessage(
+              e.displayMessage,
+              fallback: 'Could not send the code. Please wait and tap Resend.',
+            );
       setState(() {
         _smsSending = false;
-        _smsHint = sanitizeUserMessage(
-          e.displayMessage,
-          fallback: 'Could not send the code. Please tap Resend.',
-        );
+        _smsHint = hint;
       });
-      _resendSeconds.value = 0;
       showApiError(context, e);
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _smsSending = false;
-        _smsHint = 'Could not send the code. Please tap Resend.';
+        _smsHint = isPhoneTakenMessage(e)
+            ? 'This number is already registered. Please log in.'
+            : 'Could not send the code. Please wait and tap Resend.';
       });
-      _resendSeconds.value = 0;
     }
   }
 
   void _startResendTimer() {
     _resendTimer?.cancel();
-    _resendSeconds.value = 60;
+    _resendSeconds.value = _resendCooldownSec;
     _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
         timer.cancel();
@@ -281,6 +288,8 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
   Future<void> _onResend() async {
     if (_resendSeconds.value > 0 || _smsSending) return;
 
+    // Lock Resend immediately with a fresh 60 → 59 → 58… countdown.
+    _startResendTimer();
     setState(() {
       _smsSending = true;
       _smsHint = 'Sending code…';
@@ -304,6 +313,23 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
             awaitSms: false,
           );
         } on ApiException catch (e) {
+          if (isPhoneTakenMessage(e) ||
+              AuthController.instance.isAlreadyVerifiedAccount(e)) {
+            if (!mounted) return;
+            setState(() {
+              _smsSending = false;
+              _smsHint =
+                  'This number is already registered. Please log in.';
+            });
+            showApiError(
+              context,
+              ApiException(
+                message:
+                    'This number is already registered. Please log in.',
+              ),
+            );
+            return;
+          }
           final m = e.displayMessage.toLowerCase();
           final fallback = m.contains('no account') ||
               m.contains('not found') ||
@@ -326,14 +352,16 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
       await _ensureOtpAndSendSms(isResend: true);
     } on ApiException catch (e) {
       if (!mounted) return;
+      final hint = isPhoneTakenMessage(e)
+          ? 'This number is already registered. Please log in.'
+          : sanitizeUserMessage(
+              e.displayMessage,
+              fallback: 'Could not send the code. Please try again.',
+            );
       setState(() {
         _smsSending = false;
-        _smsHint = sanitizeUserMessage(
-          e.displayMessage,
-          fallback: 'Could not send the code. Please try again.',
-        );
+        _smsHint = hint;
       });
-      _resendSeconds.value = 0;
       showApiError(context, e);
     } catch (e) {
       if (!mounted) return;
@@ -341,7 +369,6 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
         _smsSending = false;
         _smsHint = 'Could not send the code. Please try again.';
       });
-      _resendSeconds.value = 0;
     }
   }
 
@@ -476,21 +503,36 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
                       listenable: _resendSeconds,
                       builder: (context, _) {
                         final seconds = _resendSeconds.value;
-                        if (_smsSending) {
+                        if (_smsSending && seconds <= 0) {
                           return Text(
                             'Sending…',
-                            style: Theme.of(context).textTheme.bodySmall,
+                            style: GoogleFonts.manrope(
+                              color: AppColors.textSecondary,
+                              fontWeight: FontWeight.w600,
+                            ),
                           );
                         }
                         if (seconds > 0) {
                           return Text(
-                            'Resend in ${seconds}s',
-                            style: Theme.of(context).textTheme.bodySmall,
+                            _smsSending
+                                ? 'Sending… Resend in ${seconds}s'
+                                : 'Resend code in ${seconds}s',
+                            style: GoogleFonts.manrope(
+                              color: AppColors.textSecondary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                            ),
                           );
                         }
                         return TextButton(
                           onPressed: _onResend,
-                          child: const Text('Resend code'),
+                          child: Text(
+                            'Resend code',
+                            style: GoogleFonts.manrope(
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.forest,
+                            ),
+                          ),
                         );
                       },
                     ),

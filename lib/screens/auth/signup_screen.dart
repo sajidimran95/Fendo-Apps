@@ -146,32 +146,48 @@ class _SignupScreenState extends State<SignupScreen>
       if (phoneTaken) {
         try {
           FirebasePhoneOtp.prepareFreshRequest(keepResendToken: false);
-          final canVerify = await AuthController.instance
-              .resendRegisterOtpIfUnverified(phone);
+          final resolution = await AuthController.instance
+              .resolvePhoneTakenConflict(phone);
           if (!mounted) return;
 
-          if (canVerify) {
-            // Registered but not verified → send code again.
-            showApiMessage(context, 'Enter the code sent to your phone.');
-            _goToOtp(phone, purpose: OtpPurpose.register);
-            return;
+          switch (resolution) {
+            case PhoneTakenResolution.unverifiedPending:
+              showApiMessage(context, 'Enter the code sent to your phone.');
+              _goToOtp(phone, purpose: OtpPurpose.register);
+              return;
+            case PhoneTakenResolution.closedAccount:
+              showApiMessage(
+                context,
+                'This number belongs to a closed account and cannot be '
+                'registered again yet. Contact support to free the number.',
+              );
+              return;
+            case PhoneTakenResolution.activeAccount:
+              showApiMessage(
+                context,
+                'This number is already registered. Please log in. '
+                'If you deleted this account, contact support to free the number.',
+              );
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+              );
+              return;
           }
-
-          // Already registered and verified → login.
-          showApiMessage(
-            context,
-            'This number is already registered. Please log in.',
-          );
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const LoginScreen()),
-          );
         } on ApiException catch (resendErr) {
           debugPrint('REGISTER otp after taken failed: $resendErr');
           if (!mounted) return;
-          // Safe default: verified / cannot resend register OTP → login.
+          if (AuthController.instance.isAccountMissing(resendErr)) {
+            showApiMessage(
+              context,
+              'This number belongs to a closed account and cannot be '
+              'registered again yet. Contact support to free the number.',
+            );
+            return;
+          }
           showApiMessage(
             context,
-            'This number is already registered. Please log in.',
+            'This number is already registered. Please log in. '
+            'If you deleted this account, contact support to free the number.',
           );
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (_) => const LoginScreen()),

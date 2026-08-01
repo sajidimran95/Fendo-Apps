@@ -26,6 +26,22 @@ String sanitizeUserMessage(
 
   final lower = raw.toLowerCase();
 
+  // Phone already in use — never show generic "could not send OTP".
+  if (_looksLikePhoneTaken(lower)) {
+    return 'This number is already registered. Please log in.';
+  }
+  if (lower.contains('no account') ||
+      lower.contains('user not found') ||
+      lower.contains('account not found') ||
+      (lower.contains('not found') && lower.contains('phone'))) {
+    return 'No account found for this number.';
+  }
+  if (lower.contains('too many') ||
+      lower.contains('quota') ||
+      lower.contains('rate limit')) {
+    return 'Too many attempts. Please wait a moment and try again.';
+  }
+
   // Hide technical / JSON / stack / Firebase internals from users.
   final looksTechnical = raw.startsWith('{') ||
       raw.startsWith('[') ||
@@ -50,11 +66,6 @@ String sanitizeUserMessage(
       RegExp(r'\[.*\]').hasMatch(raw) && lower.contains('error');
 
   if (looksTechnical) {
-    if (lower.contains('too many') ||
-        lower.contains('quota') ||
-        lower.contains('rate')) {
-      return 'Too many attempts. Please wait a moment and try again.';
-    }
     if (lower.contains('phone') &&
         (lower.contains('invalid') || lower.contains('format'))) {
       return 'Please enter a valid mobile number.';
@@ -72,6 +83,27 @@ String sanitizeUserMessage(
   // Keep short, readable product messages.
   if (raw.length > 140) return fallback;
   return raw;
+}
+
+bool _looksLikePhoneTaken(String lower) {
+  return lower.contains('already been taken') ||
+      lower.contains('has already been taken') ||
+      lower.contains('already registered') ||
+      lower.contains('already exists') ||
+      lower.contains('already in use') ||
+      lower.contains('phone has been taken') ||
+      (lower.contains('phone') &&
+          (lower.contains('taken') ||
+              lower.contains('exists') ||
+              lower.contains('registered')));
+}
+
+/// True when API/error text means this phone is already registered.
+bool isPhoneTakenMessage(Object error) {
+  final raw = error is ApiException
+      ? error.displayMessage.toLowerCase()
+      : error.toString().toLowerCase();
+  return _looksLikePhoneTaken(raw);
 }
 
 void showApiError(BuildContext context, Object error) {
