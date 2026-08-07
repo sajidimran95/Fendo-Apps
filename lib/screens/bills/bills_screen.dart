@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/format_date.dart';
 import '../../models/bill_model.dart';
 import '../../services/bills_controller.dart';
 import '../../theme/app_colors.dart';
@@ -165,7 +166,7 @@ class _BillsScreenState extends State<BillsScreen> {
                                 ),
                               ),
                               Text(
-                                '${b.groupName ?? 'Group'} · Due ${b.dueDate}',
+                                '${b.groupName ?? 'Group'} · Due ${formatDisplayDate(b.dueDate)}',
                                 style: GoogleFonts.manrope(
                                   fontSize: 12,
                                   color: AppColors.textSecondary,

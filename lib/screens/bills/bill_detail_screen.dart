@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/format_date.dart';
 import '../../models/bill_model.dart';
 import '../../services/bills_controller.dart';
 import '../../theme/app_colors.dart';
@@ -186,7 +187,7 @@ class _BillDetailScreenState extends State<BillDetailScreen> {
                               MoneyText(b.amount, positive: false, size: 32),
                               const SizedBox(height: 8),
                               Text(
-                                'Due ${b.dueDate}',
+                                'Due ${formatDisplayDate(b.dueDate)}',
                                 style: GoogleFonts.manrope(
                                   color: AppColors.textSecondary,
                                 ),

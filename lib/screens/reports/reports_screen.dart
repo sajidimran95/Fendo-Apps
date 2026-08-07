@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/format_date.dart';
 import '../../models/bill_model.dart';
 import '../../models/report_model.dart';
 import '../../services/auth_controller.dart';
@@ -266,7 +267,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                   ),
                                 ),
                                 Text(
-                                  '${b.groupName ?? 'Bill'} · ${b.dueDate.length >= 10 ? b.dueDate.substring(0, 10) : b.dueDate}',
+                                  '${b.groupName ?? 'Bill'} · ${formatDisplayDate(b.dueDate)}',
                                   style: GoogleFonts.manrope(
                                     fontSize: 12,
                                     color: AppColors.textMuted,

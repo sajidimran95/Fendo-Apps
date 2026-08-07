@@ -3,11 +3,14 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/storage/app_prefs.dart';
 import '../../services/contacts_match_service.dart';
+import '../../services/dashboard_controller.dart';
+import '../../services/push_notification_service.dart';
 import '../../theme/app_colors.dart';
 import '../activity/activity_screen.dart';
 import '../bills/bills_screen.dart';
 import '../groups/groups_screen.dart';
 import '../loans/contacts_permission_screen.dart';
+import '../notifications/notifications_permission_screen.dart';
 import '../profile/profile_screen.dart';
 import 'dashboard_screen.dart';
 
@@ -20,7 +23,8 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _index = 0;
-  bool _checkingContacts = true;
+  bool _checkingSetup = true;
+  bool _needsNotificationsPrompt = false;
   bool _needsContactsPrompt = false;
 
   final _pages = const [
@@ -34,16 +38,37 @@ class _MainShellState extends State<MainShell> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkContactsPrompt());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkSetupPrompts());
   }
 
-  Future<void> _checkContactsPrompt() async {
-    final prompted = await AppPrefs.instance.contactsPrompted;
+  Future<void> _checkSetupPrompts() async {
+    final notifPrompted = await AppPrefs.instance.notificationsPrompted;
+    final contactsPrompted = await AppPrefs.instance.contactsPrompted;
     if (!mounted) return;
     setState(() {
-      _needsContactsPrompt = !prompted;
-      _checkingContacts = false;
+      _needsNotificationsPrompt = !notifPrompted;
+      _needsContactsPrompt = !contactsPrompted;
+      _checkingSetup = false;
     });
+
+    // Returning users: refresh FCM token for bill reminders & alerts.
+    if (notifPrompted) {
+      // ignore: unawaited_futures
+      PushNotificationService.instance.syncWithBackend();
+    }
+  }
+
+  Future<void> _finishNotificationsPrompt({required bool allowed}) async {
+    var granted = false;
+    if (allowed) {
+      granted = await PushNotificationService.instance.requestPermission();
+      if (granted) {
+        await PushNotificationService.instance.syncWithBackend();
+      }
+    }
+    await AppPrefs.instance.setNotificationsAllowed(granted);
+    if (!mounted) return;
+    setState(() => _needsNotificationsPrompt = false);
   }
 
   Future<void> _finishContactsPrompt({required bool allowed}) async {
@@ -59,12 +84,20 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    if (_checkingContacts) {
+    if (_checkingSetup) {
       return const Scaffold(
         backgroundColor: AppColors.canvas,
         body: Center(
           child: CircularProgressIndicator(color: AppColors.mint),
         ),
+      );
+    }
+
+    // After register/login: ask for push first (bills, reminders, all alerts).
+    if (_needsNotificationsPrompt) {
+      return NotificationsPermissionScreen(
+        onAllow: () => _finishNotificationsPrompt(allowed: true),
+        onSkip: () => _finishNotificationsPrompt(allowed: false),
       );
     }
 
@@ -94,7 +127,11 @@ class _MainShellState extends State<MainShell> {
                   icon: Icons.home_rounded,
                   label: 'Home',
                   selected: _index == 0,
-                  onTap: () => setState(() => _index = 0),
+                  onTap: () {
+                    setState(() => _index = 0);
+                    // ignore: unawaited_futures
+                    DashboardController.instance.load(force: true);
+                  },
                 ),
                 _NavItem(
                   icon: Icons.groups_rounded,

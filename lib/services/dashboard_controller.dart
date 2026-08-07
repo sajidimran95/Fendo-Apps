@@ -4,6 +4,7 @@ import '../core/config/api_config.dart';
 import '../core/network/api_exception.dart';
 import '../models/dashboard_model.dart';
 import 'auth_controller.dart';
+import 'balances_controller.dart';
 import 'bills_controller.dart';
 import 'dashboard_api.dart';
 import 'spending_totals.dart';
@@ -19,6 +20,7 @@ class DashboardController extends ChangeNotifier {
   bool _loading = false;
   String? _error;
   double _billsPaidThisMonth = 0;
+  int _loadGen = 0;
 
   DashboardSummary? get summary => _summary;
   bool get loading => _loading;
@@ -34,9 +36,9 @@ class DashboardController extends ChangeNotifier {
   double get spendingThisMonth => expensesThisMonth + _billsPaidThisMonth;
 
   Future<void> load({bool force = false}) async {
-    if (_loading) return;
-    if (_summary != null && !force) return;
+    if (_summary != null && !force && !_loading) return;
 
+    final gen = ++_loadGen;
     _loading = true;
     _error = null;
     notifyListeners();
@@ -57,16 +59,41 @@ class DashboardController extends ChangeNotifier {
         );
         _billsPaidThisMonth = 45;
       } else {
-        _summary = await _api.getDashboard();
+        final dash = await _api.getDashboard();
+        if (gen != _loadGen) return;
+
+        // GET /balances is the source of truth for who owes whom.
+        // Dashboard alone can stay stale or return zeros after a new expense.
+        var balance = dash.balanceSummary;
+        try {
+          final overall = await BalancesController.instance.loadBalances();
+          balance = DashboardBalanceSummary(
+            totalYouOwe: overall.totalYouOwe,
+            totalYouAreOwed: overall.totalYouAreOwed,
+            netBalance: overall.netBalance,
+          );
+        } catch (e) {
+          debugPrint('Dashboard balances fallback failed: $e');
+        }
+
+        if (gen != _loadGen) return;
+        _summary = DashboardSummary(
+          balanceSummary: balance,
+          quickStats: dash.quickStats,
+          upcomingBills: dash.upcomingBills,
+          recentActivity: dash.recentActivity,
+        );
         await _loadBillsPaidThisMonth();
       }
     } on ApiException catch (e) {
-      _error = e.displayMessage;
+      if (gen == _loadGen) _error = e.displayMessage;
     } catch (e) {
-      _error = e.toString();
+      if (gen == _loadGen) _error = e.toString();
     } finally {
-      _loading = false;
-      notifyListeners();
+      if (gen == _loadGen) {
+        _loading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -86,6 +113,7 @@ class DashboardController extends ChangeNotifier {
   }
 
   void clear() {
+    _loadGen++;
     _summary = null;
     _error = null;
     _billsPaidThisMonth = 0;

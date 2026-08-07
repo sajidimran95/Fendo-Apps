@@ -360,6 +360,17 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       showApiError(context, ApiException(message: 'Select participants'));
       return;
     }
+    // You alone paying + splitting with only yourself → net balance stays 0.
+    if (participants.length < 2 && _split != 'itemized') {
+      showApiError(
+        context,
+        ApiException(
+          message:
+              'Select at least one friend. Expense with only you does not change balance.',
+        ),
+      );
+      return;
+    }
 
     final items = _split == 'itemized'
         ? _items

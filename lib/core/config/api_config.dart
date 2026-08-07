@@ -1,16 +1,16 @@
-/// ═══════════════════════════════════════════════════════════
-/// API BASE URL — edit ONLY this file.
-/// Change [baseUrl] below and the whole app (login, groups,
-/// loans, bills, avatars, etc.) uses the new server.
+﻿/// API base URL only — change this when the server moves.
 /// No trailing slash. Paths look like `/auth/login`.
-/// Example: https://your-domain.com/api/v1
-/// ═══════════════════════════════════════════════════════════
 class ApiConfig {
   ApiConfig._();
 
-  /// ← PUT YOUR API BASE URL HERE
-  static const String baseUrl =
-      'https://fendo.posprimepluswholesale.com/api/v1';
+  /// Website: https://fendo.posquickcart.com/
+  ///
+  /// Desired API host: https://api.fendo.posquickcart.com/v1
+  /// That host has no DNS yet, so the app uses the live path on the main
+  /// subdomain (same server/API): .../api/v1
+  /// When api.fendo DNS + SSL work, switch baseUrl to:
+  ///   'https://api.fendo.posquickcart.com/v1'
+  static const String baseUrl = 'https://fendo.posquickcart.com/api/v1';
 
   /// When true, any email/password signs in locally (no API).
   /// Keep false for live server.

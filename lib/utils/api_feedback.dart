@@ -42,40 +42,45 @@ String sanitizeUserMessage(
     return 'Too many attempts. Please wait a moment and try again.';
   }
 
-  // Hide technical / JSON / stack / Firebase internals from users.
+  // Keep real OTP / SMS / robot-check messages (do not hide Firebase errors).
+  if (lower.contains('sms') ||
+      lower.contains('robot check') ||
+      lower.contains('tap resend') ||
+      lower.contains('country code') ||
+      lower.contains('sha-1') ||
+      lower.contains('phone sign-in') ||
+      lower.contains('timed out') ||
+      lower.contains('missing initial state') ||
+      lower.contains('unable to process request') ||
+      lower.contains('internal error') ||
+      lower.startsWith('sms failed') ||
+      lower.contains('firebase internal')) {
+    if (raw.length > 200) return raw.substring(0, 200);
+    return raw;
+  }
+
+  // Hide technical / JSON / stack internals from other flows.
   final looksTechnical = raw.startsWith('{') ||
       raw.startsWith('[') ||
-      lower.contains('firebase') ||
       lower.contains('google-services') ||
-      lower.contains('recaptcha') ||
-      lower.contains('captcha') ||
-      lower.contains('sha-1') ||
-      lower.contains('sha-256') ||
-      lower.contains('blaze') ||
-      lower.contains('play integrity') ||
       lower.contains('sessionstorage') ||
-      lower.contains('missing initial state') ||
       lower.contains('oauth') ||
       lower.contains('stack trace') ||
-      lower.contains('exception') ||
       lower.contains('dioexception') ||
       lower.contains('socketexception') ||
       lower.contains('statuscode') ||
       lower.contains('"errors"') ||
       RegExp(r'\berror code[:\s]*\d+', caseSensitive: false).hasMatch(raw) ||
-      RegExp(r'\[.*\]').hasMatch(raw) && lower.contains('error');
+      (RegExp(r'\[.*\]').hasMatch(raw) && lower.contains('error'));
 
   if (looksTechnical) {
+    if (lower.contains('missing initial') ||
+        lower.contains('unable to process request')) {
+      return 'Robot check session expired. Return to the app and tap Resend once.';
+    }
     if (lower.contains('phone') &&
         (lower.contains('invalid') || lower.contains('format'))) {
       return 'Please enter a valid mobile number.';
-    }
-    if (lower.contains('otp') ||
-        lower.contains('code') ||
-        lower.contains('sms') ||
-        lower.contains('verify') ||
-        lower.contains('verification')) {
-      return 'Could not send the code. Please tap Resend and try again.';
     }
     return fallback;
   }

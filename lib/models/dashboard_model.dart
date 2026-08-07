@@ -68,23 +68,38 @@ class DashboardSummary {
   final List<ActivityItem> recentActivity;
 
   factory DashboardSummary.fromJson(Map<String, dynamic> json) {
-    final balance = json['balance_summary'];
-    final stats = json['quick_stats'];
-    final bills = json['upcoming_bills'];
-    final activity = json['recent_activity'];
+    // Prefer nested objects; also accept flat keys used by some backends.
+    Map<String, dynamic>? asMap(dynamic v) {
+      if (v is Map) return Map<String, dynamic>.from(v);
+      return null;
+    }
+
+    final balance = asMap(json['balance_summary']) ??
+        asMap(json['balances']) ??
+        (json.containsKey('total_you_owe') ||
+                json.containsKey('total_you_are_owed') ||
+                json.containsKey('net_balance')
+            ? json
+            : null);
+    final stats = asMap(json['quick_stats']) ??
+        asMap(json['stats']) ??
+        (json.containsKey('groups_count') ||
+                json.containsKey('expenses_this_month')
+            ? json
+            : null);
+    final bills = json['upcoming_bills'] ?? json['bills'];
+    final activity = json['recent_activity'] ?? json['activity'];
 
     return DashboardSummary(
-      balanceSummary: balance is Map
-          ? DashboardBalanceSummary.fromJson(
-              Map<String, dynamic>.from(balance),
-            )
+      balanceSummary: balance != null
+          ? DashboardBalanceSummary.fromJson(balance)
           : const DashboardBalanceSummary(
               totalYouOwe: 0,
               totalYouAreOwed: 0,
               netBalance: 0,
             ),
-      quickStats: stats is Map
-          ? DashboardQuickStats.fromJson(Map<String, dynamic>.from(stats))
+      quickStats: stats != null
+          ? DashboardQuickStats.fromJson(stats)
           : const DashboardQuickStats(
               groupsCount: 0,
               expensesThisMonth: 0,

@@ -4,6 +4,7 @@ import '../core/config/api_config.dart';
 import '../core/network/api_exception.dart';
 import '../models/expense_model.dart';
 import 'auth_controller.dart';
+import 'dashboard_controller.dart';
 import 'expenses_api.dart';
 import 'groups_controller.dart';
 
@@ -177,6 +178,8 @@ class ExpensesController extends ChangeNotifier {
       );
       _expenses.insert(0, expense);
       notifyListeners();
+      // ignore: unawaited_futures
+      DashboardController.instance.load(force: true);
       return expense;
     }
     final expense = await _api.createExpense(
@@ -195,6 +198,9 @@ class ExpensesController extends ChangeNotifier {
     );
     _expenses.insert(0, expense);
     notifyListeners();
+    // Balance cards use GET /balances — refresh so dashboard is not stale.
+    // ignore: unawaited_futures
+    DashboardController.instance.load(force: true);
     return expense;
   }
 

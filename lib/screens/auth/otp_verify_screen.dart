@@ -84,12 +84,21 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
 
       final apiOtp = FirebasePhoneOtp.pendingApiOtp;
       if (apiOtp == null || apiOtp.isEmpty) {
+        // ignore: avoid_print
+        print('[FendoOTP] UI: API did not return otp field');
         if (!mounted) return;
         setState(() {
           _smsSending = false;
-          _smsHint = 'Could not send the code. Please wait and tap Resend.';
+          _smsHint =
+              'Server did not return OTP. Check API register/resend response.';
         });
-        // Keep cooldown running — do not unlock Resend early.
+        showApiError(
+          context,
+          ApiException(
+            message:
+                'Server did not return OTP. Check API register/resend response.',
+          ),
+        );
         return;
       }
 
@@ -114,6 +123,12 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
       );
       if (!mounted) return;
 
+      // ignore: avoid_print
+      print(
+        '[FendoOTP] UI result sent=${result.sent} '
+        'code=${result.errorCode} error=${result.error}',
+      );
+
       setState(() {
         _smsSending = false;
         if (result.sent) {
@@ -121,19 +136,33 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
         } else if (isPhoneTakenMessage(result.error ?? '')) {
           _smsHint = 'This number is already registered. Please log in.';
         } else {
-          _smsHint = sanitizeUserMessage(
-            result.error,
-            fallback: 'Could not send the code. Please wait and tap Resend.',
-          );
+          final msg = (result.error ?? '').trim().isNotEmpty
+              ? result.error!.trim()
+              : 'Could not send the code. Please wait and tap Resend.';
+          final code = result.errorCode;
+          _smsHint = (code != null &&
+                  code.isNotEmpty &&
+                  !msg.toLowerCase().contains(code.toLowerCase()))
+              ? '$msg [$code]'
+              : msg;
         }
       });
       if (isPhoneTakenMessage(result.error ?? '')) {
         showApiError(
           context,
-          ApiException(message: 'This number is already registered. Please log in.'),
+          ApiException(
+            message: 'This number is already registered. Please log in.',
+          ),
+        );
+      } else if (!result.sent) {
+        showApiError(
+          context,
+          ApiException(message: _smsHint ?? 'Could not send the code.'),
         );
       }
     } on ApiException catch (e) {
+      // ignore: avoid_print
+      print('[FendoOTP] UI ApiException: ${e.displayMessage}');
       if (!mounted) return;
       final hint = isPhoneTakenMessage(e)
           ? 'This number is already registered. Please log in.'
@@ -146,7 +175,9 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
         _smsHint = hint;
       });
       showApiError(context, e);
-    } catch (e) {
+    } catch (e, st) {
+      // ignore: avoid_print
+      print('[FendoOTP] UI unexpected: $e\n$st');
       if (!mounted) return;
       setState(() {
         _smsSending = false;
@@ -154,6 +185,10 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen>
             ? 'This number is already registered. Please log in.'
             : 'Could not send the code. Please wait and tap Resend.';
       });
+      showApiError(
+        context,
+        ApiException(message: _smsHint ?? 'Could not send the code.'),
+      );
     }
   }
 

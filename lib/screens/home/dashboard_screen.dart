@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/utils/format_date.dart';
 import '../../models/contact_match_model.dart';
 import '../../services/auth_controller.dart';
 import '../../services/dashboard_controller.dart';
@@ -232,13 +233,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               child: _QuickAction(
                                 icon: Icons.add_rounded,
                                 label: 'Expense',
-                                onTap: () {
-                                  Navigator.of(context).push(
+                                onTap: () async {
+                                  await Navigator.of(context).push(
                                     MaterialPageRoute(
                                       builder: (_) =>
                                           const CreateExpenseScreen(),
                                     ),
                                   );
+                                  if (!mounted) return;
+                                  await _refresh();
                                 },
                               ),
                             ),
@@ -511,7 +514,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                           ),
                                         ),
                                         Text(
-                                          '${b.groupName ?? 'Bill'} · Due ${b.dueDate}',
+                                          '${b.groupName ?? 'Bill'} · Due ${formatDisplayDate(b.dueDate)}',
                                           style: GoogleFonts.manrope(
                                             fontSize: 12,
                                             color: AppColors.textSecondary,
