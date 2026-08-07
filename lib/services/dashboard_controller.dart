@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../core/config/api_config.dart';
 import '../core/network/api_exception.dart';
+import '../models/activity_model.dart';
 import '../models/dashboard_model.dart';
 import 'auth_controller.dart';
 import 'balances_controller.dart';
@@ -110,6 +111,27 @@ class DashboardController extends ChangeNotifier {
     } catch (_) {
       _billsPaidThisMonth = 0;
     }
+  }
+
+  /// Update recent activity strip without a full dashboard reload.
+  void patchRecentActivity(List<ActivityItem> activity) {
+    final current = _summary;
+    if (current == null) return;
+    final same = current.recentActivity.length == activity.length &&
+        List.generate(
+          activity.length,
+          (i) =>
+              current.recentActivity[i].id == activity[i].id &&
+              current.recentActivity[i].description == activity[i].description,
+        ).every((ok) => ok);
+    if (same) return;
+    _summary = DashboardSummary(
+      balanceSummary: current.balanceSummary,
+      quickStats: current.quickStats,
+      upcomingBills: current.upcomingBills,
+      recentActivity: List.unmodifiable(activity),
+    );
+    notifyListeners();
   }
 
   void clear() {

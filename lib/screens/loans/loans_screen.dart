@@ -257,7 +257,7 @@ class _LoanTile extends StatelessWidget {
               ],
             ),
           ),
-          MoneyText(loan.amount, positive: give, size: 16),
+          MoneyText(loan.amount, currency: loan.currency, positive: give, size: 16),
         ],
       ),
     );

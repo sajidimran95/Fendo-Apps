@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/app_currency.dart';
 import '../../services/auth_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
@@ -323,7 +324,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         runSpacing: 8,
                         children: [
                           if (user.currency.isNotEmpty)
-                            StatusChip(user.currency),
+                            StatusChip(AppCurrency.label(user.currency)),
                           if (user.timezone != null &&
                               user.timezone!.isNotEmpty)
                             StatusChip(user.timezone!),

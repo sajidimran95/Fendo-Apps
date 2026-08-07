@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/app_currency.dart';
 import '../../models/balances_model.dart';
 import '../../services/balances_controller.dart';
 import '../../theme/app_colors.dart';
@@ -98,14 +99,14 @@ class _BalancesScreenState extends State<BalancesScreen> {
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 Text(
-                                  'Owe \$${d.totalYouOwe.toStringAsFixed(2)}',
+                                  'Owe ${AppCurrency.format(d.totalYouOwe)}',
                                   style: GoogleFonts.manrope(
                                     color: AppColors.coral,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
                                 Text(
-                                  'Owed \$${d.totalYouAreOwed.toStringAsFixed(2)}',
+                                  'Owed ${AppCurrency.format(d.totalYouAreOwed)}',
                                   style: GoogleFonts.manrope(
                                     color: AppColors.mint,
                                     fontWeight: FontWeight.w600,

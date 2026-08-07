@@ -4,9 +4,11 @@ import '../core/config/api_config.dart';
 import '../core/network/api_exception.dart';
 import '../models/expense_model.dart';
 import 'auth_controller.dart';
+import 'activity_controller.dart';
 import 'dashboard_controller.dart';
 import 'expenses_api.dart';
 import 'groups_controller.dart';
+import 'receipt_ocr_service.dart';
 
 class ExpensesController extends ChangeNotifier {
   ExpensesController._();
@@ -180,6 +182,8 @@ class ExpensesController extends ChangeNotifier {
       notifyListeners();
       // ignore: unawaited_futures
       DashboardController.instance.load(force: true);
+      // ignore: unawaited_futures
+      ActivityController.instance.silentRefresh();
       return expense;
     }
     final expense = await _api.createExpense(
@@ -201,6 +205,8 @@ class ExpensesController extends ChangeNotifier {
     // Balance cards use GET /balances — refresh so dashboard is not stale.
     // ignore: unawaited_futures
     DashboardController.instance.load(force: true);
+    // ignore: unawaited_futures
+    ActivityController.instance.silentRefresh();
     return expense;
   }
 
@@ -283,6 +289,71 @@ class ExpensesController extends ChangeNotifier {
         ],
       );
     }
-    return _api.scanReceipt(filePath: filePath, fileName: fileName);
+
+    // 1) On-device OCR — this is what actually fills fields today
+    // (server /scan-receipt is often empty/stub).
+    ScanReceiptResult local = const ScanReceiptResult();
+    try {
+      local = await ReceiptOcrService.instance.scanFile(filePath);
+    } catch (e) {
+      debugPrint('Receipt on-device OCR failed: $e');
+    }
+
+    final localOk = _scanHasData(local);
+    ScanReceiptResult remote = const ScanReceiptResult();
+    // 2) Server only as backup when local found nothing (avoid long wait).
+    if (!localOk) {
+      try {
+        remote = await _api.scanReceipt(filePath: filePath, fileName: fileName);
+      } catch (e) {
+        debugPrint('Receipt API scan failed (non-fatal): $e');
+      }
+    }
+
+    return _mergeScanResults(local, remote);
+  }
+
+  bool _scanHasData(ScanReceiptResult r) {
+    final title = r.title?.trim() ?? r.merchantName?.trim() ?? '';
+    return title.isNotEmpty ||
+        r.amount != null ||
+        (r.expenseDate?.trim().isNotEmpty == true) ||
+        r.items.isNotEmpty;
+  }
+
+  /// Prefer whichever side has actual values; local OCR first for reliability.
+  ScanReceiptResult _mergeScanResults(
+    ScanReceiptResult local,
+    ScanReceiptResult remote,
+  ) {
+    final title = _nonEmpty(local.title) ??
+        _nonEmpty(local.merchantName) ??
+        _nonEmpty(remote.title) ??
+        _nonEmpty(remote.merchantName);
+    final merchant =
+        _nonEmpty(local.merchantName) ?? _nonEmpty(remote.merchantName);
+    final amount = local.amount ?? remote.amount;
+    final date = _nonEmpty(local.expenseDate) ?? _nonEmpty(remote.expenseDate);
+    final currency = _nonEmpty(local.currency) ?? _nonEmpty(remote.currency);
+    final items = local.items.isNotEmpty ? local.items : remote.items;
+
+    return ScanReceiptResult(
+      title: title,
+      merchantName: merchant,
+      amount: amount,
+      expenseDate: date,
+      currency: currency,
+      items: items,
+      raw: {
+        if (local.raw != null) 'local': local.raw,
+        if (remote.raw != null) 'remote': remote.raw,
+      },
+    );
+  }
+
+  String? _nonEmpty(String? s) {
+    if (s == null) return null;
+    final t = s.trim();
+    return t.isEmpty ? null : t;
   }
 }

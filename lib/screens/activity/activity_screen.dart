@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
-import '../../models/activity_model.dart';
 import '../../services/activity_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
@@ -16,54 +15,83 @@ class ActivityScreen extends StatefulWidget {
   State<ActivityScreen> createState() => _ActivityScreenState();
 }
 
-class _ActivityScreenState extends State<ActivityScreen> {
+class _ActivityScreenState extends State<ActivityScreen>
+    with WidgetsBindingObserver {
   final _scroll = ScrollController();
-  List<ActivityItem> _items = const [];
-  bool _loading = true;
   bool _loadingMore = false;
+  bool _initial = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scroll.addListener(_onScroll);
-    _load();
+    ActivityController.instance.addListener(_onController);
+    _bootstrap();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _scroll.removeListener(_onScroll);
+    ActivityController.instance.removeListener(_onController);
     _scroll.dispose();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // ignore: unawaited_futures
+      ActivityController.instance.silentRefresh();
+    }
+  }
+
+  void _onController() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  Future<void> _bootstrap() async {
+    final ctrl = ActivityController.instance;
+    // Show cache immediately if already filled by live sync.
+    if (ctrl.items.isNotEmpty) {
+      setState(() => _initial = false);
+      // ignore: unawaited_futures
+      ctrl.silentRefresh();
+      return;
+    }
+    try {
+      await ctrl.loadActivity();
+    } on ApiException catch (e) {
+      if (mounted) showApiError(context, e);
+    } finally {
+      if (mounted) setState(() => _initial = false);
+    }
+  }
+
   void _onScroll() {
-    if (!_scroll.hasClients || _loadingMore || _loading) return;
-    if (!ActivityController.instance.hasMore) return;
+    final ctrl = ActivityController.instance;
+    if (!_scroll.hasClients || _loadingMore || ctrl.loading) return;
+    if (!ctrl.hasMore) return;
     if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 160) {
       _loadMore();
     }
   }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
+  Future<void> _pullRefresh() async {
     try {
-      final items = await ActivityController.instance.loadActivity();
-      if (!mounted) return;
-      setState(() => _items = items);
+      await ActivityController.instance.loadActivity();
     } on ApiException catch (e) {
       if (!mounted) return;
       showApiError(context, e);
-    } finally {
-      if (mounted) setState(() => _loading = false);
     }
   }
 
   Future<void> _loadMore() async {
     setState(() => _loadingMore = true);
     try {
-      final items = await ActivityController.instance.loadMore();
-      if (!mounted) return;
-      setState(() => _items = items);
+      await ActivityController.instance.loadMore();
     } on ApiException catch (e) {
       if (!mounted) return;
       showApiError(context, e);
@@ -74,12 +102,16 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final ctrl = ActivityController.instance;
+    final items = ctrl.items;
+    final loading = (_initial || ctrl.loading) && items.isEmpty;
+
     return Scaffold(
       backgroundColor: AppColors.canvas,
       body: SafeArea(
         child: RefreshIndicator(
           color: AppColors.mint,
-          onRefresh: _load,
+          onRefresh: _pullRefresh,
           child: CustomScrollView(
             controller: _scroll,
             physics: const AlwaysScrollableScrollPhysics(),
@@ -87,26 +119,33 @@ class _ActivityScreenState extends State<ActivityScreen> {
               const SliverToBoxAdapter(
                 child: AppHeader(
                   title: 'Activity',
-                  subtitle: 'Everything happening across groups',
+                  subtitle: 'Updates live · pull to refresh anytime',
                 ),
               ),
-              if (_loading && _items.isEmpty)
+              if (loading)
                 const SliverFillRemaining(
                   hasScrollBody: false,
                   child: Center(
                     child: CircularProgressIndicator(color: AppColors.mint),
                   ),
                 )
-              else if (_items.isEmpty)
+              else if (items.isEmpty)
                 const SliverFillRemaining(
                   hasScrollBody: false,
                   child: EmptyHint(message: 'No activity yet'),
                 )
               else ...[
+                if (ctrl.isLive)
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(20, 0, 20, 6),
+                      child: _LiveBadge(),
+                    ),
+                  ),
                 SliverList(
                   delegate: SliverChildBuilderDelegate(
-                    (context, i) => ActivityTile(item: _items[i]),
-                    childCount: _items.length,
+                    (context, i) => ActivityTile(item: items[i]),
+                    childCount: items.length,
                   ),
                 ),
                 SliverToBoxAdapter(
@@ -122,7 +161,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                               ),
                             ),
                           )
-                        : ActivityController.instance.hasMore
+                        : ctrl.hasMore
                             ? TextButton(
                                 onPressed: _loadMore,
                                 child: Text(
@@ -148,6 +187,35 @@ class _ActivityScreenState extends State<ActivityScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _LiveBadge extends StatelessWidget {
+  const _LiveBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: const BoxDecoration(
+            color: AppColors.mint,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          'Live updates',
+          style: GoogleFonts.manrope(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textMuted,
+          ),
+        ),
+      ],
     );
   }
 }

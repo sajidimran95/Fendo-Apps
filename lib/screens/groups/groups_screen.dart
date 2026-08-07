@@ -203,6 +203,7 @@ class _GroupTile extends StatelessWidget {
           ),
           MoneyText(
             group.netBalance,
+            currency: group.currency,
             positive: group.netBalance >= 0,
             size: 16,
           ),

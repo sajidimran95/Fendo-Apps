@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/app_currency.dart';
 import '../../models/expense_model.dart';
 import '../../services/expenses_controller.dart';
 import '../../theme/app_colors.dart';
@@ -125,7 +126,7 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              MoneyText(e.amount, positive: false, size: 32),
+                              MoneyText(e.amount, currency: e.currency, positive: false, size: 32),
                               const SizedBox(height: 8),
                               Text(
                                 'Paid by ${e.paidByLabel} · ${e.expenseDate}',
@@ -268,7 +269,9 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
   }
 
   String _participantShareLabel(ExpenseParticipant p) {
-    if (p.amount != null) return '\$${p.amount!.toStringAsFixed(2)}';
+    if (p.amount != null) {
+      return AppCurrency.format(p.amount!);
+    }
     if (p.percentage != null) return '${p.percentage}%';
     if (p.shares != null) return '${p.shares} shares';
     return 'equal';

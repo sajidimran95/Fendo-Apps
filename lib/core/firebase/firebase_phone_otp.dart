@@ -307,9 +307,11 @@ class FirebasePhoneOtp {
       case 'invalid-verification-id':
         return 'Invalid or expired code. Please tap Resend.';
       case 'missing-client-identifier':
+        return 'Phone verification setup incomplete in Firebase. Ensure Phone sign-in is Enabled and reinstall the app.';
       case 'invalid-app-credential':
+        return 'App credential invalid. In Firebase: enable Phone Auth, wait a few minutes after SHA changes, fully uninstall & reinstall Fendo.';
       case 'app-not-authorized':
-        return 'App not authorized for SMS. Add SHA-1 in Firebase (project settings), then reinstall the app.';
+        return 'App not authorized for SMS. Confirm package com.fendo.fendo, SHA-1/SHA-256 in Firebase, Phone Auth enabled, then uninstall/reinstall.';
       case 'captcha-check-failed':
         return 'Robot check failed. Return to the app and tap Resend.';
       case 'web-context-cancelled':

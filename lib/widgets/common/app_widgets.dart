@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/utils/app_currency.dart';
+import '../../services/auth_controller.dart';
 import '../../theme/app_colors.dart';
 
 class AppHeader extends StatelessWidget {
@@ -108,41 +110,51 @@ class MoneyText extends StatelessWidget {
   const MoneyText(
     this.amount, {
     super.key,
-    this.currency = 'USD',
+    /// ISO code (USD, BDT…). Null → logged-in profile currency (dynamic).
+    this.currency,
     this.positive,
     this.size = 18,
     this.bold = true,
+    this.showCode = false,
   });
 
   final double amount;
-  final String currency;
+  final String? currency;
   final bool? positive;
   final double size;
   final bool bold;
+  final bool showCode;
 
   @override
   Widget build(BuildContext context) {
-    final Color color;
-    final String prefix;
-    if (positive == null) {
-      color = AppColors.forest;
-      prefix = '';
-    } else if (positive!) {
-      color = AppColors.success;
-      prefix = '+';
-    } else {
-      color = AppColors.coral;
-      prefix = '-';
-    }
-    final value = amount.abs().toStringAsFixed(amount % 1 == 0 ? 0 : 2);
+    return ListenableBuilder(
+      listenable: AuthController.instance,
+      builder: (context, _) {
+        final Color color;
+        if (positive == null) {
+          color = AppColors.forest;
+        } else if (positive!) {
+          color = AppColors.success;
+        } else {
+          color = AppColors.coral;
+        }
+        final code = AppCurrency.normalize(currency ?? AppCurrency.profileCode);
+        final text = AppCurrency.formatSigned(
+          amount,
+          code: code,
+          positive: positive,
+        );
+        final shown = showCode ? '$text $code' : text;
 
-    return Text(
-      '$prefix\$$value',
-      style: GoogleFonts.sora(
-        fontSize: size,
-        fontWeight: bold ? FontWeight.w700 : FontWeight.w600,
-        color: color,
-      ),
+        return Text(
+          shown,
+          style: GoogleFonts.sora(
+            fontSize: size,
+            fontWeight: bold ? FontWeight.w700 : FontWeight.w600,
+            color: color,
+          ),
+        );
+      },
     );
   }
 }

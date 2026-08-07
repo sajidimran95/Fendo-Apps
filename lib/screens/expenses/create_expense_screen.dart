@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/app_currency.dart';
 import '../../models/category_model.dart';
 import '../../models/expense_model.dart';
 import '../../models/group_member.dart';
@@ -47,18 +48,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   final Map<int, TextEditingController> _payerAmt = {};
   final List<_ItemDraft> _items = [];
 
-  static const _currencies = [
-    'USD',
-    'EUR',
-    'GBP',
-    'BDT',
-    'INR',
-    'CAD',
-    'AUD',
-    'JPY',
-    'SGD',
-    'AED',
-  ];
+  static const _currencies = AppCurrency.codes;
 
   final _splits = const [
     'equal',
@@ -68,16 +58,10 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
     'itemized',
   ];
 
-  String get _profileCurrency {
-    final c = AuthController.instance.user?.currency.trim() ?? '';
-    return c.isEmpty ? 'USD' : c.toUpperCase();
-  }
+  String get _profileCurrency => AppCurrency.profileCode;
 
-  String _currencyFor(GroupModel? group) {
-    final groupCode = group?.currency.trim() ?? '';
-    if (groupCode.isNotEmpty) return groupCode.toUpperCase();
-    return _profileCurrency;
-  }
+  /// New expenses use **profile** currency (not group USD).
+  String _currencyFor(GroupModel? group) => AppCurrency.profileCode;
 
   List<String> get _currencyOptions {
     final code = _currencyCode.trim().toUpperCase();
@@ -191,9 +175,67 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       '${_date.year.toString().padLeft(4, '0')}-${_date.month.toString().padLeft(2, '0')}-${_date.day.toString().padLeft(2, '0')}';
 
   Future<void> _scanReceipt() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Scan receipt',
+                  style: GoogleFonts.sora(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.forest,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Camera or photo — Fendo reads merchant, total, date & items',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.manrope(
+                    fontSize: 13,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                ListTile(
+                  leading: const Icon(Icons.photo_camera_outlined,
+                      color: AppColors.mint),
+                  title: Text(
+                    'Take photo',
+                    style: GoogleFonts.manrope(fontWeight: FontWeight.w700),
+                  ),
+                  onTap: () => Navigator.pop(ctx, ImageSource.camera),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined,
+                      color: AppColors.forest),
+                  title: Text(
+                    'Choose from gallery',
+                    style: GoogleFonts.manrope(fontWeight: FontWeight.w700),
+                  ),
+                  onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (source == null) return;
+
     final file = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 85,
+      source: source,
+      imageQuality: 90,
+      maxWidth: 2200,
     );
     if (file == null) return;
     final bytes = await file.length();
@@ -218,22 +260,44 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
         fileName: file.name,
       );
       if (!mounted) return;
+
+      final title =
+          scanned.title ?? scanned.merchantName;
+      final hasAny = (title != null && title.trim().isNotEmpty) ||
+          scanned.amount != null ||
+          (scanned.expenseDate != null && scanned.expenseDate!.isNotEmpty) ||
+          scanned.items.isNotEmpty;
+
+      if (!hasAny) {
+        showApiError(
+          context,
+          ApiException(
+            message:
+                'Could not read this receipt. Try a clearer photo with the total visible.',
+          ),
+        );
+        return;
+      }
+
       setState(() {
-        if (scanned.title != null) _title.text = scanned.title!;
+        if (title != null && title.trim().isNotEmpty) {
+          _title.text = title.trim();
+        }
         if (scanned.amount != null) {
           _amount.text = scanned.amount!.toStringAsFixed(2);
         }
-        if (scanned.currency != null) {
+        if (scanned.currency != null && scanned.currency!.trim().isNotEmpty) {
           _currencyCode = scanned.currency!.trim().toUpperCase();
         }
         if (scanned.expenseDate != null) {
-          final parts = scanned.expenseDate!.split('-');
+          final parts = scanned.expenseDate!.split(RegExp(r'[T\s]')).first.split('-');
           if (parts.length == 3) {
-            _date = DateTime(
-              int.parse(parts[0]),
-              int.parse(parts[1]),
-              int.parse(parts[2]),
-            );
+            final y = int.tryParse(parts[0]);
+            final m = int.tryParse(parts[1]);
+            final d = int.tryParse(parts[2]);
+            if (y != null && m != null && d != null) {
+              _date = DateTime(y, m, d);
+            }
           }
         }
         if (scanned.items.isNotEmpty) {
@@ -253,12 +317,23 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
               ),
             );
           _split = 'itemized';
+          // Total from sum of items if amount missing.
+          if (scanned.amount == null) {
+            final sum = scanned.items.fold<double>(0, (a, b) => a + b.amount);
+            if (sum > 0) _amount.text = sum.toStringAsFixed(2);
+          }
         }
       });
-      showApiMessage(context, 'Receipt scanned');
+      showApiMessage(context, 'Receipt scanned — fields filled');
     } on ApiException catch (e) {
       if (!mounted) return;
       showApiError(context, e);
+    } catch (e) {
+      if (!mounted) return;
+      showApiError(
+        context,
+        ApiException(message: 'Could not read receipt. Try again with a clearer photo.'),
+      );
     } finally {
       if (mounted) setState(() => _scanning = false);
     }
@@ -506,14 +581,16 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                             color: AppColors.forest,
                           ),
                           cursorColor: AppColors.mint,
-                          decoration: const InputDecoration(
+                          decoration: InputDecoration(
                             hintText: '120.00',
+                            prefixText:
+                                '${AppCurrency.symbol(_currencyCode)} ',
                           ),
                         ),
                       ),
                       const SizedBox(width: 10),
                       SizedBox(
-                        width: 108,
+                        width: 128,
                         child: DropdownButtonFormField<String>(
                           key: ValueKey('currency-$_currencyCode'),
                           initialValue: _currencyOptions.contains(_currencyCode)
@@ -524,10 +601,11 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                                 (c) => DropdownMenuItem(
                                   value: c,
                                   child: Text(
-                                    c,
+                                    '${AppCurrency.symbol(c)} $c',
                                     style: GoogleFonts.manrope(
                                       fontWeight: FontWeight.w700,
                                       color: AppColors.forest,
+                                      fontSize: 13,
                                     ),
                                   ),
                                 ),
@@ -999,7 +1077,7 @@ class _AmountField extends StatelessWidget {
   const _AmountField({
     required this.controller,
     required this.label,
-    this.prefix = '\$ ',
+    this.prefix = r'$ ',
   });
 
   final TextEditingController controller;
@@ -1008,6 +1086,9 @@ class _AmountField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = prefix == r'$ '
+        ? '${AppCurrency.symbol(AppCurrency.profileCode)} '
+        : prefix;
     return TextField(
       controller: controller,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -1021,7 +1102,7 @@ class _AmountField extends StatelessWidget {
           fontSize: 13,
           color: AppColors.textMuted,
         ),
-        prefixText: prefix,
+        prefixText: p,
         filled: true,
         fillColor: AppColors.surfaceMuted,
         border: OutlineInputBorder(

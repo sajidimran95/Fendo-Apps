@@ -81,6 +81,7 @@ class _SettlementDetailScreenState extends State<SettlementDetailScreen> {
                           children: [
                             MoneyText(
                               s.amount,
+                              currency: s.currency,
                               positive: iPaid ? false : true,
                               size: 32,
                             ),

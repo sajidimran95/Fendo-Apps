@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/utils/app_currency.dart';
 import '../../core/utils/format_date.dart';
 import '../../models/contact_match_model.dart';
 import '../../services/auth_controller.dart';
@@ -451,7 +452,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               child: _StatBox(
                                 label: 'This month',
                                 value:
-                                    '\$${dash.spendingThisMonth.toStringAsFixed(0)}',
+                                    AppCurrency.format(dash.spendingThisMonth, decimals: 0),
                               ),
                             ),
                             const SizedBox(width: 10),

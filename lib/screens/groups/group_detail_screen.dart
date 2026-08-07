@@ -279,6 +279,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                               const SizedBox(height: 6),
                               MoneyText(
                                 g.netBalance,
+                                currency: g.currency,
                                 positive: g.netBalance >= 0,
                                 size: 28,
                               ),

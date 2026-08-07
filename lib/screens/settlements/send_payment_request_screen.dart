@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/app_currency.dart';
 import '../../models/group_member.dart';
 import '../../models/group_model.dart';
 import '../../services/auth_controller.dart';
@@ -23,7 +24,7 @@ class SendPaymentRequestScreen extends StatefulWidget {
 class _SendPaymentRequestScreenState extends State<SendPaymentRequestScreen> {
   final _amount = TextEditingController();
   final _message = TextEditingController();
-  String _currencyCode = 'USD';
+  String _currencyCode = AppCurrency.fallback;
   bool _loading = false;
   bool _booting = true;
 
@@ -32,16 +33,7 @@ class _SendPaymentRequestScreenState extends State<SendPaymentRequestScreen> {
   List<GroupMember> _members = const [];
   GroupMember? _debtor;
 
-  String get _profileCurrency {
-    final c = AuthController.instance.user?.currency.trim() ?? '';
-    return c.isEmpty ? 'USD' : c.toUpperCase();
-  }
-
-  String _currencyFor(GroupModel? group) {
-    final groupCode = group?.currency.trim() ?? '';
-    if (groupCode.isNotEmpty) return groupCode.toUpperCase();
-    return _profileCurrency;
-  }
+  String get _profileCurrency => AppCurrency.profileCode;
 
   @override
   void initState() {
@@ -58,7 +50,7 @@ class _SendPaymentRequestScreenState extends State<SendPaymentRequestScreen> {
     setState(() {
       _groups = groups;
       _group = selected;
-      _currencyCode = _currencyFor(selected);
+      _currencyCode = AppCurrency.profileCode;
       _booting = false;
     });
     if (selected != null) await _loadMembers(selected.id);
@@ -158,7 +150,7 @@ class _SendPaymentRequestScreenState extends State<SendPaymentRequestScreen> {
                         onChanged: (g) async {
                           setState(() {
                             _group = g;
-                            _currencyCode = _currencyFor(g);
+                            _currencyCode = AppCurrency.profileCode;
                             _debtor = null;
                             _members = const [];
                           });

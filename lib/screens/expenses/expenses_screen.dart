@@ -249,7 +249,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                             ],
                           ),
                         ),
-                        MoneyText(e.amount, positive: false, size: 16),
+                        MoneyText(e.amount, currency: e.currency, positive: false, size: 16),
                       ],
                     ),
                   ),

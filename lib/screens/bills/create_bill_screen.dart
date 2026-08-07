@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/app_currency.dart';
 import '../../models/bill_model.dart';
 import '../../models/group_member.dart';
 import '../../models/group_model.dart';
@@ -601,7 +602,7 @@ class _AmountHero extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Text(
-                '\$',
+                AppCurrency.profileSymbol,
                 style: GoogleFonts.sora(
                   fontSize: 28,
                   fontWeight: FontWeight.w700,
@@ -897,7 +898,7 @@ class _SplitRow extends StatelessWidget {
                   fontSize: 13,
                   color: AppColors.textMuted,
                 ),
-                prefixText: '\$ ',
+                prefixText: '${AppCurrency.profileSymbol} ',
                 filled: true,
                 fillColor: AppColors.surfaceMuted,
                 border: OutlineInputBorder(

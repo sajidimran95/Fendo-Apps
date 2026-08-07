@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/utils/app_currency.dart';
 import '../../models/report_model.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/common/app_widgets.dart';
@@ -145,7 +146,7 @@ class ReportSummaryTile extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Expenses  \$${expenses.toStringAsFixed(2)}',
+                    'Expenses  ${AppCurrency.format(expenses)}',
                     style: GoogleFonts.manrope(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -155,7 +156,7 @@ class ReportSummaryTile extends StatelessWidget {
                 ),
                 Expanded(
                   child: Text(
-                    'Bills paid  \$${billsPaid.toStringAsFixed(2)}',
+                    'Bills paid  ${AppCurrency.format(billsPaid)}',
                     style: GoogleFonts.manrope(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,

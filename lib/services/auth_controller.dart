@@ -5,6 +5,7 @@ import '../core/network/api_client.dart';
 import '../core/network/api_exception.dart';
 import '../core/storage/app_prefs.dart';
 import '../core/storage/token_storage.dart';
+import '../core/utils/app_currency.dart';
 import '../models/user_model.dart';
 import 'activity_api.dart';
 import 'activity_controller.dart';
@@ -106,6 +107,10 @@ class AuthController extends ChangeNotifier {
       }
     }
 
+    await AppCurrency.hydrate();
+    if (_user != null) {
+      _user = _user!.copyWith(currency: AppCurrency.profileCode);
+    }
     _ready = true;
     notifyListeners();
   }
@@ -119,7 +124,9 @@ class AuthController extends ChangeNotifier {
       accessToken: accessToken,
       tokenType: tokenType,
     );
-    _user = user;
+    // First login → USD; returning user → last choice.
+    await AppCurrency.onLogin(user.id);
+    _user = user.copyWith(currency: AppCurrency.profileCode);
     _authenticated = true;
     notifyListeners();
   }
@@ -413,12 +420,17 @@ class AuthController extends ChangeNotifier {
       _user = await _api.me();
     }
     _authenticated = true;
+    if (_user != null) {
+      await AppCurrency.onLogin(_user!.id);
+      _user = _user!.copyWith(currency: AppCurrency.profileCode);
+    }
     notifyListeners();
     return _user!;
   }
 
   void setUser(UserModel user) {
-    _user = user;
+    // Keep currently preferred currency on the user object for UI chips.
+    _user = user.copyWith(currency: AppCurrency.profileCode);
     _authenticated = true;
     notifyListeners();
   }
@@ -432,6 +444,7 @@ class AuthController extends ChangeNotifier {
     DashboardController.instance.clear();
     ActivityController.instance.clear();
     ContactsMatchService.clearCache();
+    AppCurrency.clearSessionPreferred();
     await FirebasePhoneOtp.resetSession();
     try {
       await FirebasePhoneOtp.signOutQuietly();

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/app_currency.dart';
 import '../../models/balances_model.dart';
 import '../../services/balances_controller.dart';
 import '../../theme/app_colors.dart';
@@ -128,7 +129,7 @@ class _PersonCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'You owe \$${person.youOwe.toStringAsFixed(2)}',
+                  'You owe ${AppCurrency.format(person.youOwe)}',
                   style: GoogleFonts.manrope(
                     fontSize: 12,
                     color: AppColors.coral,
@@ -137,7 +138,7 @@ class _PersonCard extends StatelessWidget {
                 ),
               ),
               Text(
-                'Owed \$${person.youAreOwed.toStringAsFixed(2)}',
+                'Owed ${AppCurrency.format(person.youAreOwed)}',
                 style: GoogleFonts.manrope(
                   fontSize: 12,
                   color: AppColors.mint,

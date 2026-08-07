@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
-import '../../services/auth_controller.dart';
+import '../../core/utils/app_currency.dart';
 import '../../services/groups_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
 import '../../widgets/auth/auth_widgets.dart';
 import '../../widgets/common/app_widgets.dart';
+import '../../widgets/common/currency_picker_field.dart';
 
 class CreateGroupScreen extends StatefulWidget {
   const CreateGroupScreen({super.key});
@@ -18,7 +19,7 @@ class CreateGroupScreen extends StatefulWidget {
 
 class _CreateGroupScreenState extends State<CreateGroupScreen> {
   final _name = TextEditingController();
-  late final TextEditingController _currency;
+  late String _currency;
   final _emails = TextEditingController();
   String _type = 'friends';
   bool _simplify = true;
@@ -37,16 +38,12 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   @override
   void initState() {
     super.initState();
-    final c = AuthController.instance.user?.currency.trim() ?? '';
-    _currency = TextEditingController(
-      text: c.isEmpty ? 'USD' : c.toUpperCase(),
-    );
+    _currency = AppCurrency.profileCode;
   }
 
   @override
   void dispose() {
     _name.dispose();
-    _currency.dispose();
     _emails.dispose();
     super.dispose();
   }
@@ -68,7 +65,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
       await GroupsController.instance.createGroup(
         name: _name.text.trim(),
         type: _type,
-        currency: _currency.text.trim().isEmpty ? 'USD' : _currency.text.trim(),
+        currency: AppCurrency.normalize(_currency),
         simplifyDebts: _simplify,
         memberEmails: _parsedEmails,
       );
@@ -109,10 +106,10 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                     hint: 'Bali Trip 2026',
                   ),
                   const SizedBox(height: 14),
-                  AuthTextField(
-                    controller: _currency,
+                  CurrencyPickerField(
+                    value: _currency,
+                    onChanged: (c) => setState(() => _currency = c),
                     label: 'Currency',
-                    hint: 'USD',
                   ),
                   const SizedBox(height: 18),
                   Text(

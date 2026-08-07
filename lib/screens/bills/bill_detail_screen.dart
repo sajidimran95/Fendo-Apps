@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/app_currency.dart';
 import '../../core/utils/format_date.dart';
 import '../../models/bill_model.dart';
 import '../../services/bills_controller.dart';
@@ -195,7 +196,7 @@ class _BillDetailScreenState extends State<BillDetailScreen> {
                               if (b.amountPaid > 0) ...[
                                 const SizedBox(height: 4),
                                 Text(
-                                  'Paid \$${b.amountPaid.toStringAsFixed(2)} · Remaining \$${b.remaining.toStringAsFixed(2)}',
+                                  'Paid ${AppCurrency.format(b.amountPaid)} · Remaining ${AppCurrency.format(b.remaining)}',
                                   style: GoogleFonts.manrope(
                                     color: AppColors.textMuted,
                                     fontSize: 13,

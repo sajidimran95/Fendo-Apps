@@ -5,6 +5,7 @@ import '../core/network/api_exception.dart';
 import '../models/group_balances.dart';
 import '../models/group_member.dart';
 import '../models/group_model.dart';
+import '../utils/group_invite_link.dart';
 import 'auth_controller.dart';
 import 'groups_api.dart';
 
@@ -256,11 +257,22 @@ class GroupsController extends ChangeNotifier {
     if (ApiConfig.demoAuth) {
       return InviteLinkResult(
         inviteToken: 'demo-invite-$id',
-        inviteLink: 'https://fendo.app/join/demo-invite-$id',
+        inviteLink: GroupInviteLink.shareableLink('demo-invite-$id'),
         expiresAt: DateTime.now().add(const Duration(days: 7)).toIso8601String(),
       );
     }
-    return _api.createInviteLink(id);
+    final raw = await _api.createInviteLink(id);
+    final n = GroupInviteLink.normalize(
+      inviteToken: raw.inviteToken,
+      inviteLink: raw.inviteLink,
+      expiresAt: raw.expiresAt,
+    );
+    // Never expose API POST-only URLs (browser GET → "method not supported").
+    return InviteLinkResult(
+      inviteToken: n.token,
+      inviteLink: n.shareLink,
+      expiresAt: n.expiresAt,
+    );
   }
 
   Future<InviteMembersResult> inviteByEmail(

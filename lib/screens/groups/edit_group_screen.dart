@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/app_currency.dart';
 import '../../models/group_model.dart';
 import '../../services/groups_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
 import '../../widgets/auth/auth_widgets.dart';
 import '../../widgets/common/app_widgets.dart';
+import '../../widgets/common/currency_picker_field.dart';
 
 class EditGroupScreen extends StatefulWidget {
   const EditGroupScreen({super.key, required this.group});
@@ -20,7 +22,7 @@ class EditGroupScreen extends StatefulWidget {
 
 class _EditGroupScreenState extends State<EditGroupScreen> {
   late final TextEditingController _name;
-  late final TextEditingController _currency;
+  late String _currency;
   late String _type;
   late bool _simplify;
   bool _loading = false;
@@ -39,7 +41,7 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
   void initState() {
     super.initState();
     _name = TextEditingController(text: widget.group.name);
-    _currency = TextEditingController(text: widget.group.currency);
+    _currency = AppCurrency.normalize(widget.group.currency);
     _type = widget.group.type;
     _simplify = widget.group.simplifyDebts;
   }
@@ -47,7 +49,6 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
   @override
   void dispose() {
     _name.dispose();
-    _currency.dispose();
     super.dispose();
   }
 
@@ -62,7 +63,7 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
         widget.group.id,
         name: _name.text.trim(),
         type: _type,
-        currency: _currency.text.trim(),
+        currency: AppCurrency.normalize(_currency),
         simplifyDebts: _simplify,
       );
       if (!mounted) return;
@@ -95,7 +96,10 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
                 children: [
                   AuthTextField(controller: _name, label: 'Group name'),
                   const SizedBox(height: 14),
-                  AuthTextField(controller: _currency, label: 'Currency'),
+                  CurrencyPickerField(
+                    value: _currency,
+                    onChanged: (c) => setState(() => _currency = c),
+                  ),
                   const SizedBox(height: 18),
                   Text(
                     'Type',
@@ -110,9 +114,10 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: _types.map((t) {
+                      final selected = t == _type;
                       return ChoiceChip(
                         label: Text(t),
-                        selected: t == _type,
+                        selected: selected,
                         onSelected: (_) => setState(() => _type = t),
                         selectedColor: AppColors.mintWash,
                         labelStyle: GoogleFonts.manrope(
@@ -122,6 +127,7 @@ class _EditGroupScreenState extends State<EditGroupScreen> {
                       );
                     }).toList(),
                   ),
+                  const SizedBox(height: 12),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: Text(

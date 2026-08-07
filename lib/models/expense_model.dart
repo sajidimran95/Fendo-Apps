@@ -92,8 +92,11 @@ class ExpenseItem {
   factory ExpenseItem.fromJson(Map<String, dynamic> json) {
     final assigned = json['assigned_to'];
     return ExpenseItem(
-      name: (json['name'] ?? '').toString(),
-      amount: ExpensePayer._asDouble(json['amount']),
+      name: (json['name'] ?? json['description'] ?? json['item'] ?? '')
+          .toString(),
+      amount: ExpensePayer._asDouble(
+        json['amount'] ?? json['price'] ?? json['total'] ?? 0,
+      ),
       assignedTo: assigned is List
           ? assigned.map((e) => ExpensePayer._asInt(e)).toList()
           : const [],
@@ -271,15 +274,34 @@ class ScanReceiptResult {
   final Map<String, dynamic>? raw;
 
   factory ScanReceiptResult.fromJson(Map<String, dynamic> json) {
-    final itemsRaw = json['items'];
+    // Support nested stubs like { data: {...} } already unwrapped,
+    // or { receipt: {...} }, { result: {...} }.
+    var map = json;
+    for (final key in ['receipt', 'result', 'scan', 'ocr']) {
+      final nested = map[key];
+      if (nested is Map) {
+        map = Map<String, dynamic>.from(nested);
+        break;
+      }
+    }
+    final itemsRaw = map['items'] ?? map['line_items'] ?? map['lineItems'];
+    final amountRaw = map['amount'] ??
+        map['total'] ??
+        map['grand_total'] ??
+        map['total_amount'];
     return ScanReceiptResult(
-      title: json['title']?.toString() ?? json['merchant_name']?.toString(),
-      amount: json['amount'] == null
-          ? null
-          : ExpensePayer._asDouble(json['amount']),
-      merchantName: json['merchant_name']?.toString(),
-      expenseDate: json['expense_date']?.toString() ?? json['date']?.toString(),
-      currency: json['currency']?.toString(),
+      title: map['title']?.toString() ??
+          map['merchant_name']?.toString() ??
+          map['merchant']?.toString() ??
+          map['store_name']?.toString(),
+      amount: amountRaw == null ? null : ExpensePayer._asDouble(amountRaw),
+      merchantName: map['merchant_name']?.toString() ??
+          map['merchant']?.toString() ??
+          map['store_name']?.toString(),
+      expenseDate: map['expense_date']?.toString() ??
+          map['date']?.toString() ??
+          map['receipt_date']?.toString(),
+      currency: map['currency']?.toString(),
       items: itemsRaw is List
           ? itemsRaw
               .whereType<Map>()

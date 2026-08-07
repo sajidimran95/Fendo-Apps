@@ -4,6 +4,10 @@
 <dict>
 	<key>NSContactsUsageDescription</key>
 	<string>Fendo needs contacts to find friends already on Fendo and invite them to groups.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Fendo uses the camera to scan receipts and fill expense details.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Fendo uses your photos to scan receipts and fill expense details.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

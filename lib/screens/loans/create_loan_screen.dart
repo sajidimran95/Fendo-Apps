@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
 import '../../core/storage/app_prefs.dart';
+import '../../core/utils/app_currency.dart';
 import '../../models/contact_match_model.dart';
 import '../../services/auth_controller.dart';
 import '../../services/contacts_match_service.dart';
@@ -11,6 +12,7 @@ import '../../services/groups_controller.dart';
 import '../../services/loans_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
+import '../../utils/group_invite_link.dart';
 import '../../widgets/auth/auth_widgets.dart';
 import '../../widgets/common/app_widgets.dart';
 import 'contacts_permission_screen.dart';
@@ -198,14 +200,14 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
 
       final link =
           await GroupsController.instance.createInviteLink(groupId);
-      final code = link.inviteToken.trim().isNotEmpty
-          ? link.inviteToken
-          : link.inviteLink;
-      final shareText = link.inviteLink.trim().isNotEmpty
-          ? 'Join me on Fendo: ${link.inviteLink}\nInvite code: $code'
-          : 'Join me on Fendo — invite code: $code';
+      final shareText = GroupInviteLink.shareMessage(
+        token: link.inviteToken,
+        inviteLink: link.inviteLink,
+      );
       await Clipboard.setData(ClipboardData(text: shareText));
-      return code;
+      return link.inviteToken.isNotEmpty
+          ? link.inviteToken
+          : GroupInviteLink.extractToken(link.inviteLink);
     } catch (_) {
       return null;
     }
@@ -265,8 +267,8 @@ class _CreateLoanScreenState extends State<CreateLoanScreen> {
 
       if (!mounted) return;
       final base = _direction == LoanDirection.give
-          ? 'Loan saved — you lent \$${amount.toStringAsFixed(2)}'
-          : 'Loan saved — you borrowed \$${amount.toStringAsFixed(2)}';
+          ? 'Loan saved — you lent ${AppCurrency.format(amount)}'
+          : 'Loan saved — you borrowed ${AppCurrency.format(amount)}';
       showApiMessage(
         context,
         inviteCode == null || inviteCode.isEmpty

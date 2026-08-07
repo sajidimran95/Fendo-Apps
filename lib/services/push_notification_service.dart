@@ -12,6 +12,7 @@ import '../core/firebase/firebase_bootstrap.dart';
 import '../firebase_options.dart';
 import '../screens/notifications/notifications_screen.dart';
 import 'auth_controller.dart';
+import 'activity_controller.dart';
 import 'notifications_controller.dart';
 
 /// Android / iOS channel used for bill reminders and all Fendo pushes.
@@ -181,6 +182,9 @@ class PushNotificationService {
     try {
       await NotificationsController.instance.loadUnreadCount();
     } catch (_) {}
+    // New push often means new group/expense activity — refresh without reload.
+    // ignore: unawaited_futures
+    ActivityController.instance.silentRefresh();
   }
 
   void _onMessageOpened(RemoteMessage message) {

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/app_currency.dart';
 import '../../services/auth_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
 import '../../widgets/auth/auth_widgets.dart';
 import '../../widgets/common/app_widgets.dart';
+import '../../widgets/common/currency_picker_field.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -18,7 +21,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late final TextEditingController _name;
   late final TextEditingController _phone;
   late final TextEditingController _timezone;
-  late final TextEditingController _currency;
+  late String _currency;
   late final TextEditingController _language;
   late final TextEditingController _venmo;
   late final TextEditingController _paypal;
@@ -33,7 +36,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _name = TextEditingController(text: u?.name ?? '');
     _phone = TextEditingController(text: u?.phone ?? '');
     _timezone = TextEditingController(text: u?.timezone ?? '');
-    _currency = TextEditingController(text: u?.currency ?? 'USD');
+    // First login = USD; after user changes = their choice.
+    _currency = AppCurrency.profileCode;
     _language = TextEditingController(text: u?.language ?? '');
     _venmo = TextEditingController(text: u?.venmoHandle ?? '');
     _paypal = TextEditingController(text: u?.paypalEmail ?? '');
@@ -46,14 +50,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final user = await AuthController.instance.userApi.getProfile();
       AuthController.instance.setUser(user);
       if (!mounted) return;
-      _name.text = user.name;
-      _phone.text = user.phone ?? '';
-      _timezone.text = user.timezone ?? '';
-      _currency.text = user.currency;
-      _language.text = user.language ?? '';
-      _venmo.text = user.venmoHandle ?? '';
-      _paypal.text = user.paypalEmail ?? '';
-      _cashapp.text = user.cashappTag ?? '';
+      setState(() {
+        _name.text = user.name;
+        _phone.text = user.phone ?? '';
+        _timezone.text = user.timezone ?? '';
+        // Do not reset to API USD — keep preferred (USD first-login or later change).
+        _currency = AppCurrency.profileCode;
+        _language.text = user.language ?? '';
+        _venmo.text = user.venmoHandle ?? '';
+        _paypal.text = user.paypalEmail ?? '';
+        _cashapp.text = user.cashappTag ?? '';
+      });
     } on ApiException catch (e) {
       if (mounted) showApiError(context, e);
     } finally {
@@ -66,7 +73,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _name.dispose();
     _phone.dispose();
     _timezone.dispose();
-    _currency.dispose();
     _language.dispose();
     _venmo.dispose();
     _paypal.dispose();
@@ -86,15 +92,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         name: _name.text.trim(),
         phone: _phone.text.trim(),
         timezone: _timezone.text.trim(),
-        currency: _currency.text.trim(),
+        currency: AppCurrency.normalize(_currency),
         language: _language.text.trim(),
         venmoHandle: _venmo.text.trim(),
         paypalEmail: _paypal.text.trim(),
         cashappTag: _cashapp.text.trim(),
       );
-      AuthController.instance.setUser(user);
+      // Always keep what the user picked — server often still returns USD only.
+      final chosen = AppCurrency.normalize(_currency);
+      await AppCurrency.setPreferred(chosen);
+      final saved = user.copyWith(currency: chosen);
+      AuthController.instance.setUser(saved);
       if (!mounted) return;
-      showApiMessage(context, 'Profile updated');
+      showApiMessage(
+        context,
+        'Profile updated · default ${AppCurrency.label(chosen)}',
+      );
       Navigator.pop(context);
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -141,10 +154,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           hint: 'e.g. America/New_York',
                         ),
                         const SizedBox(height: 14),
-                        AuthTextField(
-                          controller: _currency,
-                          label: 'Currency',
-                          hint: 'USD',
+                        CurrencyPickerField(
+                          value: _currency,
+                          onChanged: (c) => setState(() => _currency = c),
+                          label: 'Default currency',
+                        ),
+                        const SizedBox(height: 6),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'First login starts as USD · ${AppCurrency.symbol('USD')}. '
+                            'After you change it, every screen uses your choice (${AppCurrency.symbol(_currency)} $_currency).',
+                            style: GoogleFonts.manrope(
+                              fontSize: 12,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
                         ),
                         const SizedBox(height: 14),
                         AuthTextField(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/storage/app_prefs.dart';
+import '../../services/activity_controller.dart';
 import '../../services/contacts_match_service.dart';
 import '../../services/dashboard_controller.dart';
 import '../../services/push_notification_service.dart';
@@ -21,7 +22,7 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> {
+class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   int _index = 0;
   bool _checkingSetup = true;
   bool _needsNotificationsPrompt = false;
@@ -38,7 +39,32 @@ class _MainShellState extends State<MainShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkSetupPrompts());
+    ActivityController.instance.startLiveUpdates();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    ActivityController.instance.stopLiveUpdates();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ActivityController.instance.startLiveUpdates();
+      // ignore: unawaited_futures
+      ActivityController.instance.silentRefresh();
+      if (_index == 0) {
+        // ignore: unawaited_futures
+        DashboardController.instance.load(force: true);
+      }
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      ActivityController.instance.stopLiveUpdates();
+    }
   }
 
   Future<void> _checkSetupPrompts() async {
@@ -80,6 +106,17 @@ class _MainShellState extends State<MainShell> {
     }
     if (!mounted) return;
     setState(() => _needsContactsPrompt = false);
+  }
+
+  void _goTab(int index) {
+    setState(() => _index = index);
+    if (index == 0) {
+      // ignore: unawaited_futures
+      DashboardController.instance.load(force: true);
+    } else if (index == 3) {
+      // ignore: unawaited_futures
+      ActivityController.instance.silentRefresh();
+    }
   }
 
   @override
@@ -127,35 +164,31 @@ class _MainShellState extends State<MainShell> {
                   icon: Icons.home_rounded,
                   label: 'Home',
                   selected: _index == 0,
-                  onTap: () {
-                    setState(() => _index = 0);
-                    // ignore: unawaited_futures
-                    DashboardController.instance.load(force: true);
-                  },
+                  onTap: () => _goTab(0),
                 ),
                 _NavItem(
                   icon: Icons.groups_rounded,
                   label: 'Groups',
                   selected: _index == 1,
-                  onTap: () => setState(() => _index = 1),
+                  onTap: () => _goTab(1),
                 ),
                 _NavItem(
                   icon: Icons.receipt_long_rounded,
                   label: 'Bills',
                   selected: _index == 2,
-                  onTap: () => setState(() => _index = 2),
+                  onTap: () => _goTab(2),
                 ),
                 _NavItem(
                   icon: Icons.timeline_rounded,
                   label: 'Activity',
                   selected: _index == 3,
-                  onTap: () => setState(() => _index = 3),
+                  onTap: () => _goTab(3),
                 ),
                 _NavItem(
                   icon: Icons.person_rounded,
                   label: 'Profile',
                   selected: _index == 4,
-                  onTap: () => setState(() => _index = 4),
+                  onTap: () => _goTab(4),
                 ),
               ],
             ),

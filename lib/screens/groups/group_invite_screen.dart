@@ -9,6 +9,7 @@ import '../../services/contacts_match_service.dart';
 import '../../services/groups_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
+import '../../utils/group_invite_link.dart';
 import '../../widgets/auth/auth_widgets.dart';
 import '../../widgets/common/app_widgets.dart';
 import '../loans/contacts_permission_screen.dart';
@@ -26,6 +27,7 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
   final _emails = TextEditingController();
   final _phones = TextEditingController();
   final _search = TextEditingController();
+  final _quick = TextEditingController();
   bool _sending = false;
   bool _linking = false;
   bool _loadingContacts = true;
@@ -33,15 +35,18 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
   String? _inviteLink;
   String? _inviteToken;
   String? _expiresAt;
+  String? _busyLocalId;
 
   List<ContactMatchResult> _contacts = const [];
   final Set<String> _selectedLocalIds = {};
+  final Set<String> _addedLocalIds = {};
 
   @override
   void initState() {
     super.initState();
     _emails.addListener(() => setState(() {}));
     _phones.addListener(() => setState(() {}));
+    _quick.addListener(() => setState(() {}));
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadContacts());
   }
 
@@ -50,6 +55,7 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
     _emails.dispose();
     _phones.dispose();
     _search.dispose();
+    _quick.dispose();
     super.dispose();
   }
 
@@ -140,29 +146,53 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
 
   List<ContactMatchResult> get _filtered {
     final q = _search.text.trim().toLowerCase();
-    if (q.isEmpty) return _contacts;
-    return _contacts.where((c) {
-      final name = (c.user?.name ?? c.name).toLowerCase();
-      final email = [
-        ...c.emails,
-        if (c.user?.email != null) c.user!.email,
-      ].join(' ').toLowerCase();
-      final phone = c.phones.join(' ').toLowerCase();
-      return name.contains(q) || email.contains(q) || phone.contains(q);
-    }).toList();
+    var list = q.isEmpty
+        ? _contacts
+        : _contacts.where((c) {
+            final name = (c.user?.name ?? c.name).toLowerCase();
+            final email = [
+              ...c.emails,
+              if (c.user?.email != null) c.user!.email,
+            ].join(' ').toLowerCase();
+            final phone = c.phones.join(' ').toLowerCase();
+            return name.contains(q) || email.contains(q) || phone.contains(q);
+          }).toList();
+    // On Fendo first so friends are easy to add.
+    list = [...list]..sort((a, b) {
+        if (a.isAppUser == b.isAppUser) {
+          return (a.user?.name ?? a.name)
+              .toLowerCase()
+              .compareTo((b.user?.name ?? b.name).toLowerCase());
+        }
+        return a.isAppUser ? -1 : 1;
+      });
+    return list;
   }
 
-  List<String> get _manualEmails => _emails.text
-      .split(RegExp(r'[,;\s]+'))
-      .map((e) => e.trim())
-      .where((e) => e.contains('@'))
-      .toList();
+  List<String> get _manualEmails {
+    final fromQuick = _quick.text.trim();
+    final emails = <String>{
+      ..._emails.text
+          .split(RegExp(r'[,;\s]+'))
+          .map((e) => e.trim())
+          .where((e) => e.contains('@')),
+      if (fromQuick.contains('@')) fromQuick,
+    };
+    return emails.toList();
+  }
 
-  List<String> get _manualPhones => _phones.text
-      .split(RegExp(r'[,;\s]+'))
-      .map((e) => e.trim())
-      .where((e) => e.replaceAll(RegExp(r'\D'), '').length >= 7)
-      .toList();
+  List<String> get _manualPhones {
+    final fromQuick = _quick.text.trim();
+    final digits = fromQuick.replaceAll(RegExp(r'\D'), '');
+    final phones = <String>{
+      ..._phones.text
+          .split(RegExp(r'[,;\s]+'))
+          .map((e) => e.trim())
+          .where((e) => e.replaceAll(RegExp(r'\D'), '').length >= 7),
+      if (!fromQuick.contains('@') && digits.length >= 7) fromQuick,
+    };
+    return phones.toList();
+  }
 
   List<ContactMatchResult> get _selectedContacts => _contacts
       .where((c) => _selectedLocalIds.contains(c.localId))
@@ -178,15 +208,7 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
   List<String> get _onFendoEmails {
     final emails = <String>{};
     for (final c in _selectedOnFendo) {
-      final fromUser = c.user?.email.trim();
-      if (fromUser != null && fromUser.contains('@')) {
-        emails.add(fromUser);
-        continue;
-      }
-      for (final e in c.emails) {
-        final t = e.trim();
-        if (t.contains('@')) emails.add(t);
-      }
+      emails.addAll(_emailsForContact(c));
     }
     return emails.toList();
   }
@@ -195,14 +217,7 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
   List<String> get _onFendoPhones {
     final phones = <String>{};
     for (final c in _selectedOnFendo) {
-      final fromUser = c.user?.phone?.trim();
-      if (fromUser != null && fromUser.isNotEmpty) {
-        phones.add(fromUser);
-      }
-      for (final p in c.phones) {
-        final t = p.trim();
-        if (t.isNotEmpty) phones.add(t);
-      }
+      phones.addAll(_phonesForContact(c));
     }
     return phones.toList();
   }
@@ -212,11 +227,31 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
       _manualEmails.isNotEmpty ||
       _manualPhones.isNotEmpty;
 
+  List<String> _emailsForContact(ContactMatchResult c) {
+    final emails = <String>{};
+    final fromUser = c.user?.email.trim();
+    if (fromUser != null && fromUser.contains('@')) emails.add(fromUser);
+    for (final e in c.emails) {
+      final t = e.trim();
+      if (t.contains('@')) emails.add(t);
+    }
+    return emails.toList();
+  }
+
+  List<String> _phonesForContact(ContactMatchResult c) {
+    final phones = <String>{};
+    final fromUser = c.user?.phone?.trim();
+    if (fromUser != null && fromUser.isNotEmpty) phones.add(fromUser);
+    for (final p in c.phones) {
+      final t = p.trim();
+      if (t.isNotEmpty) phones.add(t);
+    }
+    return phones.toList();
+  }
+
   void _toggleContact(ContactMatchResult c) {
-    final hasEmail = c.emails.any((e) => e.contains('@')) ||
-        (c.user?.email.contains('@') ?? false);
-    final hasPhone = c.phones.any((p) => p.trim().isNotEmpty) ||
-        ((c.user?.phone ?? '').trim().isNotEmpty);
+    final hasEmail = _emailsForContact(c).isNotEmpty;
+    final hasPhone = _phonesForContact(c).isNotEmpty;
     if (!c.isAppUser && !hasEmail && !hasPhone) {
       showApiError(
         context,
@@ -233,6 +268,163 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
     });
   }
 
+  /// One tap:
+  /// 1) Try API with phone/email → if on Fendo, add to group directly.
+  /// 2) If not on Fendo, open share message that includes their number.
+  Future<void> _oneTapContact(ContactMatchResult c) async {
+    if (_busyLocalId != null || _sending) return;
+    if (_addedLocalIds.contains(c.localId)) {
+      showApiMessage(context, 'Already added');
+      return;
+    }
+
+    final emails = _emailsForContact(c);
+    final phones = _phonesForContact(c);
+    final displayName = c.user?.name ?? c.name;
+    if (emails.isEmpty && phones.isEmpty) {
+      showApiError(
+        context,
+        ApiException(message: 'This contact needs a mobile number or email'),
+      );
+      return;
+    }
+
+    setState(() => _busyLocalId = c.localId);
+    try {
+      // Always check server: contact match can miss app users.
+      final result = await GroupsController.instance.inviteContacts(
+        widget.groupId,
+        emails: emails,
+        phones: phones,
+      );
+      if (!mounted) return;
+
+      if (result.addedCount > 0) {
+        setState(() => _addedLocalIds.add(c.localId));
+        showApiMessage(context, 'Added $displayName to the group');
+        return;
+      }
+      if (result.alreadyMembers.isNotEmpty) {
+        setState(() => _addedLocalIds.add(c.localId));
+        showApiMessage(context, 'Already in group');
+        return;
+      }
+
+      // Not on Fendo (or number not registered) → share invite with number.
+      final link = await _ensureInviteLink();
+      if (!mounted) return;
+      setState(() => _addedLocalIds.add(c.localId));
+      await _showInviteLinkSheet(
+        link: link,
+        names: displayName.trim().isEmpty ? const [] : [displayName],
+        phones: phones,
+        emails: emails,
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      // Validation / not found → treat as invite needed.
+      if (e.isValidation) {
+        final link = await _ensureInviteLink();
+        if (!mounted) return;
+        setState(() => _addedLocalIds.add(c.localId));
+        await _showInviteLinkSheet(
+          link: link,
+          names: displayName.trim().isEmpty ? const [] : [displayName],
+          phones: phones,
+          emails: emails,
+        );
+      } else {
+        showApiError(context, e);
+      }
+    } finally {
+      if (mounted) setState(() => _busyLocalId = null);
+    }
+  }
+
+  /// Type phone or email:
+  /// - On Fendo → added directly
+  /// - Not on Fendo → invite message with that mobile/email
+  Future<void> _quickAdd() async {
+    final emails = _manualEmails;
+    final phones = _manualPhones;
+    if (emails.isEmpty && phones.isEmpty) {
+      showApiError(
+        context,
+        ApiException(message: 'Enter a mobile number or email'),
+      );
+      return;
+    }
+    setState(() => _sending = true);
+    try {
+      var added = 0;
+      var already = 0;
+      var needInvite = false;
+      try {
+        final result = await GroupsController.instance.inviteContacts(
+          widget.groupId,
+          emails: emails,
+          phones: phones,
+        );
+        added = result.addedCount;
+        already = result.alreadyMembers.length;
+        // If nothing added/already, or server listed not_found → invite.
+        needInvite = result.notFound.isNotEmpty ||
+            (added == 0 && already == 0);
+      } on ApiException catch (e) {
+        if (e.isValidation) {
+          needInvite = true;
+        } else {
+          rethrow;
+        }
+      }
+      if (!mounted) return;
+
+      if (added > 0) {
+        showApiMessage(
+          context,
+          added == 1
+              ? 'Added directly (uses Fendo)'
+              : 'Added $added people directly (use Fendo)',
+        );
+      }
+      if (already > 0 && added == 0) {
+        showApiMessage(context, 'Already in group');
+      }
+
+      if (needInvite && added == 0 && already == 0) {
+        final link = await _ensureInviteLink();
+        if (!mounted) return;
+        await _showInviteLinkSheet(
+          link: link,
+          names: const [],
+          phones: phones,
+          emails: emails,
+        );
+      } else if (needInvite && (added > 0 || already > 0)) {
+        // Partial: some on app, some not.
+        final link = await _ensureInviteLink();
+        if (!mounted) return;
+        await _showInviteLinkSheet(
+          link: link,
+          names: const [],
+          phones: phones,
+          emails: emails,
+        );
+      }
+
+      setState(() {
+        _quick.clear();
+        _emails.clear();
+        _phones.clear();
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      showApiError(context, e);
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
   Future<String> _ensureInviteLink() async {
     if (_inviteLink != null && _inviteLink!.isNotEmpty) return _inviteLink!;
     final link =
@@ -246,14 +438,25 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
     return link.inviteLink;
   }
 
+  String get _shareClipboard {
+    final token = _inviteToken ?? GroupInviteLink.extractToken(_inviteLink ?? '');
+    return GroupInviteLink.shareMessage(
+      token: token,
+      inviteLink: _inviteLink,
+    );
+  }
+
   Future<void> _showInviteLinkSheet({
     required String link,
-    required List<String> names,
+    List<String> names = const [],
+    List<String> phones = const [],
+    List<String> emails = const [],
   }) async {
     if (!mounted) return;
-    final namesLabel = names.isEmpty
-        ? 'people not on Fendo yet'
-        : names.take(4).join(', ') + (names.length > 4 ? '…' : '');
+    final shareText = GroupInviteLink.shareMessage(
+      token: '',
+      inviteLink: link,
+    );
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.surface,
@@ -268,7 +471,7 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Invite to Fendo',
+                'Invite friend',
                 style: GoogleFonts.sora(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
@@ -277,7 +480,7 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Share this link with $namesLabel so they can join the group.',
+                'Send this short message. They only need to download Fendo and register.',
                 style: GoogleFonts.manrope(
                   color: AppColors.textSecondary,
                   height: 1.35,
@@ -285,21 +488,23 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
               ),
               const SizedBox(height: 14),
               SelectableText(
-                link,
+                shareText,
                 style: GoogleFonts.manrope(
                   fontWeight: FontWeight.w600,
                   color: AppColors.forest,
+                  fontSize: 15,
+                  height: 1.4,
                 ),
               ),
               const SizedBox(height: 16),
               AuthPrimaryButton(
-                label: 'Copy invite link',
+                label: 'Copy message',
                 onPressed: () async {
-                  await Clipboard.setData(ClipboardData(text: link));
+                  await Clipboard.setData(ClipboardData(text: shareText));
                   if (!ctx.mounted) return;
                   Navigator.pop(ctx);
                   if (!mounted) return;
-                  showApiMessage(this.context, 'Invite link copied');
+                  showApiMessage(context, 'Message copied');
                 },
               ),
             ],
@@ -337,6 +542,17 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
       addEmails.addAll(_manualEmails);
       addPhones.addAll(_manualPhones);
 
+      // Selected contacts not match-marked as app users: still try API
+      // (match can be wrong), then collect phones for invite message.
+      for (final c in _selectedNeedInvite) {
+        for (final e in _emailsForContact(c)) {
+          addEmails.add(e);
+        }
+        for (final p in _phonesForContact(c)) {
+          addPhones.add(p);
+        }
+      }
+
       if (addEmails.isNotEmpty || addPhones.isNotEmpty) {
         try {
           final result = await GroupsController.instance.inviteContacts(
@@ -360,7 +576,7 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
               try {
                 final phoneOnly =
                     await GroupsController.instance.inviteByPhone(
-        widget.groupId,
+                  widget.groupId,
                   phones: addPhones.toList(),
                 );
                 added += phoneOnly.addedCount;
@@ -371,9 +587,11 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                 }
               } on ApiException {
                 needInviteNames.addAll(addPhones);
+                needInviteLookup.addAll(addPhones);
               }
             } else if (addPhones.isNotEmpty) {
               needInviteNames.addAll(addPhones);
+              needInviteLookup.addAll(addPhones);
             }
           } else {
             rethrow;
@@ -381,31 +599,49 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
         }
       }
 
-      // Selected non-users always get invite link option.
-      final shouldOfferInvite =
-          needInviteNames.isNotEmpty || _selectedNeedInvite.isNotEmpty;
+      // Who still needs an outside invite (include phone in share message).
+      final invitePhones = <String>{
+        for (final c in _selectedNeedInvite) ..._phonesForContact(c),
+        ..._manualPhones,
+        ...needInviteLookup.where((s) {
+          final digits = s.replaceAll(RegExp(r'\D'), '');
+          return !s.contains('@') && digits.length >= 7;
+        }),
+      };
+      final inviteEmails = <String>{
+        for (final c in _selectedNeedInvite) ..._emailsForContact(c),
+        ..._manualEmails,
+        ...needInviteLookup.where((s) => s.contains('@')),
+      };
+      // Share only when someone wasn't found / not on Fendo.
+      final shouldShare = needInviteLookup.isNotEmpty ||
+          (added == 0 &&
+              already == 0 &&
+              (_selectedNeedInvite.isNotEmpty ||
+                  invitePhones.isNotEmpty ||
+                  inviteEmails.isNotEmpty));
 
       if (!mounted) return;
       final parts = <String>[];
-      if (added > 0) parts.add('$added added');
-      if (already > 0) parts.add('$already already members');
-      if (shouldOfferInvite) {
-        parts.add(
-          '${_selectedNeedInvite.length + needInviteLookup.length} need invite',
-        );
-      }
+      if (added > 0) parts.add('$added added directly');
+      if (already > 0) parts.add('$already already in group');
+      if (shouldShare) parts.add('share invite for rest');
 
       if (parts.isNotEmpty) {
         showApiMessage(context, parts.join(' · '));
       }
 
-      if (shouldOfferInvite) {
+      if (shouldShare) {
         final link = await _ensureInviteLink();
         final uniqueNames = <String>{
           ..._selectedNeedInvite.map((c) => c.user?.name ?? c.name),
-          ...needInviteLookup,
         }.toList();
-        await _showInviteLinkSheet(link: link, names: uniqueNames);
+        await _showInviteLinkSheet(
+          link: link,
+          names: uniqueNames,
+          phones: invitePhones.toList(),
+          emails: inviteEmails.toList(),
+        );
       } else if (parts.isEmpty) {
         showApiMessage(context, 'Invite finished');
       }
@@ -452,16 +688,17 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
           child: Column(
           children: [
             AppHeader(
-              title: 'Invite',
-                subtitle: 'Email, link, or contacts',
+              title: 'Add friends',
+              subtitle: 'Quick add or link first · contacts at the bottom',
               onBack: () => Navigator.pop(context),
             ),
               Expanded(
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
                 children: [
+                    // 1) Quick add first
                     Text(
-                      'Add by email or mobile',
+                      'Quick add',
                       style: GoogleFonts.sora(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -470,29 +707,63 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'On Fendo accounts are added to the group. Others get an invite link.',
+                      'Type mobile or email. On Fendo → added now. Else → download message.',
                       style: GoogleFonts.manrope(
                         fontSize: 12,
                         color: AppColors.textMuted,
                       ),
                     ),
                     const SizedBox(height: 10),
-                  AuthTextField(
-                    controller: _emails,
-                    label: 'Emails',
-                    hint: 'a@mail.com, b@mail.com',
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-                    const SizedBox(height: 12),
-                    AuthTextField(
-                      controller: _phones,
-                      label: 'Mobile numbers',
-                      hint: '+1 555 123 4567',
-                      keyboardType: TextInputType.phone,
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: AuthTextField(
+                            controller: _quick,
+                            label: 'Phone or email',
+                            hint: '+8801… or name@mail.com',
+                            keyboardType: TextInputType.text,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 28),
+                          child: SizedBox(
+                            height: 52,
+                            child: FilledButton(
+                              onPressed: _sending ? null : _quickAdd,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.mint,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                              child: _sending
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : Text(
+                                      'Add',
+                                      style: GoogleFonts.manrope(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 22),
+
+                    // 2) Invite link
+                    const SizedBox(height: 28),
                     Text(
-                      'Invite link',
+                      'Invite link (optional)',
                       style: GoogleFonts.sora(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -500,73 +771,83 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-            SoftTile(
+                    SoftTile(
                       margin: EdgeInsets.zero,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_inviteLink == null)
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (_inviteLink == null)
+                            Text(
+                              'Create a code to share. Friends: download Fendo and register.',
+                              style: GoogleFonts.manrope(
+                                color: AppColors.textSecondary,
+                              ),
+                            )
+                          else ...[
+                            Text(
+                              'Invite code',
+                              style: GoogleFonts.manrope(
+                                fontSize: 12,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                            SelectableText(
+                              _inviteToken ??
+                                  GroupInviteLink.extractToken(_inviteLink!),
+                              style: GoogleFonts.manrope(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 18,
+                                color: AppColors.forest,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            SelectableText(
+                              _inviteLink!,
+                              style: GoogleFonts.manrope(
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.forest,
+                                fontSize: 13,
+                              ),
+                            ),
+                            if (_expiresAt != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                'Expires: $_expiresAt',
+                                style: GoogleFonts.manrope(
+                                  fontSize: 12,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            TextButton.icon(
+                              onPressed: () async {
+                                await Clipboard.setData(
+                                  ClipboardData(text: _shareClipboard),
+                                );
+                                if (!context.mounted) return;
+                                showApiMessage(context, 'Message copied');
+                              },
+                              icon: const Icon(Icons.copy_rounded),
+                              label: const Text('Copy message'),
+                            ),
+                          ],
+                          const SizedBox(height: 8),
+                          AuthPrimaryButton(
+                            label: _inviteLink == null
+                                ? 'Create invite link'
+                                : 'Refresh link',
+                            loading: _linking,
+                            onPressed: _linking ? null : _createLink,
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // 3) Contacts last
+                    const SizedBox(height: 28),
                     Text(
-                      'Generate a link others can use to join.',
-                      style: GoogleFonts.manrope(
-                        color: AppColors.textSecondary,
-                      ),
-                    )
-                  else ...[
-                    SelectableText(
-                      _inviteLink!,
-                      style: GoogleFonts.manrope(
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.forest,
-                      ),
-                    ),
-                    if (_inviteToken != null) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Token: $_inviteToken',
-                        style: GoogleFonts.manrope(
-                          fontSize: 12,
-                          color: AppColors.textMuted,
-                        ),
-                      ),
-                    ],
-                    if (_expiresAt != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        'Expires: $_expiresAt',
-                        style: GoogleFonts.manrope(
-                          fontSize: 12,
-                          color: AppColors.textMuted,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    TextButton.icon(
-                      onPressed: () async {
-                        await Clipboard.setData(
-                          ClipboardData(text: _inviteLink!),
-                        );
-                        if (!context.mounted) return;
-                        showApiMessage(context, 'Link copied');
-                      },
-                      icon: const Icon(Icons.copy_rounded),
-                      label: const Text('Copy link'),
-                    ),
-                  ],
-                  const SizedBox(height: 8),
-                  AuthPrimaryButton(
-                    label: _inviteLink == null
-                        ? 'Create invite link'
-                        : 'Refresh link',
-                    loading: _linking,
-                    onPressed: _linking ? null : _createLink,
-                  ),
-                ],
-              ),
-                    ),
-                    const SizedBox(height: 22),
-                    Text(
-                      'From contacts',
+                      'Phone contacts',
                       style: GoogleFonts.sora(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -575,7 +856,7 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Select anyone — On Fendo are added, others get an invite option.',
+                      'Add = join if on Fendo. Invite = download & register.',
                       style: GoogleFonts.manrope(
                         fontSize: 12,
                         color: AppColors.textMuted,
@@ -603,36 +884,36 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      if (_selectedLocalIds.isNotEmpty)
+                      if (_filtered.isEmpty)
                         Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
                           child: Text(
-                            '${_selectedOnFendo.length} add · ${_selectedNeedInvite.length} invite',
+                            'No contacts matched your search.',
                             style: GoogleFonts.manrope(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.mintDim,
+                              color: AppColors.textMuted,
                             ),
                           ),
                         ),
                       ..._filtered.map((c) {
-                        final selected =
-                            _selectedLocalIds.contains(c.localId);
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 8),
                           child: _InviteContactTile(
                             contact: c,
-                            selected: selected,
+                            selected: _selectedLocalIds.contains(c.localId),
+                            added: _addedLocalIds.contains(c.localId),
+                            busy: _busyLocalId == c.localId,
                             onTap: () => _toggleContact(c),
+                            onAction: () => _oneTapContact(c),
                           ),
                         );
                       }),
                     ],
+
                     const SizedBox(height: 80),
                   ],
                 ),
               ),
-              if (_hasPendingInviteAction)
+              if (_selectedLocalIds.isNotEmpty)
                 SafeArea(
                   top: false,
                   child: Container(
@@ -652,21 +933,13 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                       label: () {
                         final inviteN = _selectedNeedInvite.length;
                         final addN = _selectedOnFendo.length;
-                        if (_selectedLocalIds.isEmpty &&
-                            (_manualEmails.isNotEmpty ||
-                                _manualPhones.isNotEmpty)) {
-                          return 'Add / invite';
-                        }
                         if (inviteN > 0 && addN == 0) {
-                          return 'Invite $inviteN contact${inviteN == 1 ? '' : 's'}';
+                          return 'Invite $inviteN selected';
                         }
                         if (inviteN > 0) {
                           return 'Add $addN · Invite $inviteN';
                         }
-                        final n = _selectedLocalIds.isEmpty
-                            ? (_manualEmails.length + _manualPhones.length)
-                            : _selectedLocalIds.length;
-                        return 'Add $n contact${n == 1 ? '' : 's'}';
+                        return 'Add ${_selectedLocalIds.length} selected';
                       }(),
                       loading: _sending,
                       onPressed: _sending ? null : _sendInvites,
@@ -729,12 +1002,18 @@ class _InviteContactTile extends StatelessWidget {
   const _InviteContactTile({
     required this.contact,
     required this.selected,
+    required this.added,
+    required this.busy,
     required this.onTap,
+    required this.onAction,
   });
 
   final ContactMatchResult contact;
   final bool selected;
+  final bool added;
+  final bool busy;
   final VoidCallback onTap;
+  final VoidCallback onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -756,14 +1035,14 @@ class _InviteContactTile extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
+          padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: selected
+              color: selected || added
                   ? AppColors.mint.withValues(alpha: 0.55)
                   : AppColors.border.withValues(alpha: 0.7),
-              width: selected ? 1.6 : 1,
+              width: selected || added ? 1.6 : 1,
             ),
           ),
           child: Row(
@@ -797,6 +1076,8 @@ class _InviteContactTile extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.manrope(
                           fontSize: 12,
                           color: canInvite
@@ -805,85 +1086,56 @@ class _InviteContactTile extends StatelessWidget {
                         ),
                       ),
                     ],
-                    if (!canInvite)
-                      Text(
-                        'Needs email or phone to invite',
-                        style: GoogleFonts.manrope(
-                          fontSize: 11,
-                          color: AppColors.coral,
-                        ),
-                      )
-                    else if (!hasEmail && hasPhone)
-                      Text(
-                        'Invite by phone',
-                        style: GoogleFonts.manrope(
-                          fontSize: 11,
-                          color: AppColors.mintDim,
-                        ),
-                      ),
                   ],
                 ),
               ),
-              if (onApp)
+              if (added)
                 Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.mintWash,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      'On Fendo',
-                      style: GoogleFonts.manrope(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.mintDim,
-                      ),
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Text(
+                    'Added',
+                    style: GoogleFonts.manrope(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.mintDim,
                     ),
                   ),
                 )
-              else if (canInvite)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Container(
+              else
+                FilledButton(
+                  onPressed: !canInvite || busy ? null : onAction,
+                  style: FilledButton.styleFrom(
+                    backgroundColor:
+                        onApp ? AppColors.mint : AppColors.forest,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor:
+                        AppColors.border.withValues(alpha: 0.4),
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
+                      horizontal: 14,
+                      vertical: 8,
                     ),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceMuted,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      'Invite',
-                      style: GoogleFonts.manrope(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textMuted,
-                      ),
+                    minimumSize: const Size(0, 36),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
                     ),
                   ),
+                  child: busy
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(
+                          onApp ? 'Add' : 'Invite',
+                          style: GoogleFonts.manrope(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                          ),
+                        ),
                 ),
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                width: 22,
-                height: 22,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: selected ? AppColors.mint : Colors.transparent,
-                  border: Border.all(
-                    color: selected ? AppColors.mint : AppColors.border,
-                    width: 2,
-                  ),
-                ),
-                child: selected
-                    ? const Icon(Icons.check, size: 14, color: Colors.white)
-                    : null,
-              ),
             ],
           ),
         ),
@@ -891,3 +1143,4 @@ class _InviteContactTile extends StatelessWidget {
     );
   }
 }
+
