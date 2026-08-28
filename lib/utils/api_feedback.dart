@@ -85,8 +85,8 @@ String sanitizeUserMessage(
     return fallback;
   }
 
-  // Keep short, readable product messages.
-  if (raw.length > 140) return fallback;
+  // Keep short, readable product messages (truncate — never wipe as generic).
+  if (raw.length > 200) return '${raw.substring(0, 197)}…';
   return raw;
 }
 

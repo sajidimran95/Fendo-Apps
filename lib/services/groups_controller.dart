@@ -113,6 +113,19 @@ class GroupsController extends ChangeNotifier {
     _groups
       ..clear()
       ..addAll(list);
+    // If list cards show 0 members, fill counts from /members (bounded).
+    final missing = _groups.where((g) => g.memberCount <= 0).take(8).toList();
+    if (missing.isNotEmpty) {
+      await Future.wait(
+        missing.map((g) async {
+          try {
+            final members = await _api.getMembers(g.id);
+            _members[g.id] = members;
+            _setMemberCount(g.id, members.length);
+          } catch (_) {}
+        }),
+      );
+    }
     notifyListeners();
     return groups;
   }
@@ -176,15 +189,42 @@ class GroupsController extends ChangeNotifier {
         orElse: () => throw ApiException(message: 'Group not found'),
       );
     }
-    final group = await _api.getGroup(id);
-    final i = _groups.indexWhere((g) => g.id == id);
+    var group = await _api.getGroup(id);
+    // Backend often omits member_count (shows 0) — fill from live members list.
+    if (group.memberCount <= 0) {
+      try {
+        final members = await _api.getMembers(id);
+        _members[id] = members;
+        if (members.isNotEmpty) {
+          group = group.copyWith(memberCount: members.length);
+        }
+      } catch (_) {}
+    }
+    _upsertGroup(group);
+    notifyListeners();
+    return group;
+  }
+
+  void _upsertGroup(GroupModel group) {
+    final i = _groups.indexWhere((g) => g.id == group.id);
     if (i >= 0) {
-      _groups[i] = group;
+      // Preserve higher known memberCount if API returns 0 again.
+      final existing = _groups[i];
+      final count = group.memberCount > 0
+          ? group.memberCount
+          : existing.memberCount;
+      _groups[i] = group.copyWith(memberCount: count);
     } else {
       _groups.add(group);
     }
-    notifyListeners();
-    return group;
+  }
+
+  void _setMemberCount(int groupId, int count) {
+    if (count < 0) return;
+    final gi = _groups.indexWhere((g) => g.id == groupId);
+    if (gi >= 0 && _groups[gi].memberCount != count) {
+      _groups[gi] = _groups[gi].copyWith(memberCount: count);
+    }
   }
 
   Future<GroupModel> updateGroup(
@@ -344,6 +384,12 @@ class GroupsController extends ChangeNotifier {
     if (phones.isNotEmpty) {
       result = result.merge(await inviteByPhone(id, phones: phones));
     }
+    // Refresh member count after successful adds.
+    if (result.addedCount > 0) {
+      try {
+        await getMembers(id);
+      } catch (_) {}
+    }
     return result;
   }
 
@@ -374,8 +420,9 @@ class GroupsController extends ChangeNotifier {
     }
     final list = await _api.getMembers(id);
     _members[id] = list;
+    _setMemberCount(id, list.length);
     notifyListeners();
-    return list;
+    return List.unmodifiable(list);
   }
 
   Future<GroupMember> updateMemberRole(
@@ -400,14 +447,24 @@ class GroupsController extends ChangeNotifier {
       final list = _members[groupId] ?? [];
       list.removeWhere((m) => m.userId == userId);
       _members[groupId] = list;
-      final gi = _groups.indexWhere((g) => g.id == groupId);
-      if (gi >= 0) {
-        _groups[gi] = _groups[gi].copyWith(memberCount: list.length);
-      }
+      _setMemberCount(groupId, list.length);
       notifyListeners();
       return;
     }
     await _api.removeMember(groupId, userId);
+    final cached = _members[groupId];
+    if (cached != null) {
+      cached.removeWhere((m) => m.userId == userId);
+      _members[groupId] = cached;
+      _setMemberCount(groupId, cached.length);
+    } else {
+      try {
+        final list = await _api.getMembers(groupId);
+        _members[groupId] = list;
+        _setMemberCount(groupId, list.length);
+      } catch (_) {}
+    }
+    notifyListeners();
   }
 
   Future<GroupBalances> getBalances(int id) async {

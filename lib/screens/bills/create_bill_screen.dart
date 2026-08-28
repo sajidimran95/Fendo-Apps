@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
 import '../../core/utils/app_currency.dart';
+import '../../core/utils/format_date.dart';
 import '../../models/bill_model.dart';
 import '../../models/group_member.dart';
 import '../../models/group_model.dart';
@@ -351,16 +352,16 @@ class _CreateBillScreenState extends State<CreateBillScreen> {
                         runSpacing: 8,
                         children: _frequencies.map((f) {
                           final selected = _frequency == f;
-                          return ChoiceChip(
-                            label: Text(
-                              f,
-                              style: GoogleFonts.manrope(
-                                fontWeight: FontWeight.w600,
-                                color: selected
-                                    ? AppColors.forest
-                                    : AppColors.textSecondary,
-                              ),
+                        return ChoiceChip(
+                          label: Text(
+                            formatDisplayLabel(f),
+                            style: GoogleFonts.manrope(
+                              fontWeight: FontWeight.w600,
+                              color: selected
+                                  ? AppColors.forest
+                                  : AppColors.textSecondary,
                             ),
+                          ),
                             selected: selected,
                             onSelected: (_) =>
                                 setState(() => _frequency = f),

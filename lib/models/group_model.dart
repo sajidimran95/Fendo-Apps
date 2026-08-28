@@ -50,7 +50,7 @@ class GroupModel {
       simplifyDebts: json['simplify_debts'] == true ||
           json['simplify_debts'] == 1 ||
           json['simplify_debts'] == '1',
-      memberCount: _asInt(json['member_count'] ?? json['members_count'] ?? 0),
+      memberCount: _parseMemberCount(json),
       photo: json['photo']?.toString() ?? json['avatar']?.toString(),
       archived: json['archived'] == true || json['is_archived'] == true,
       muted: json['muted'] == true || json['notifications_muted'] == true,
@@ -60,6 +60,35 @@ class GroupModel {
       role: json['role']?.toString() ?? json['my_role']?.toString(),
       createdAt: json['created_at']?.toString(),
     );
+  }
+
+  /// API may send count under many keys, or only embed a members list.
+  static int _parseMemberCount(Map<String, dynamic> json) {
+    for (final key in const [
+      'member_count',
+      'members_count',
+      'memberCount',
+      'membersCount',
+      'total_members',
+      'totalMembers',
+      'users_count',
+      'user_count',
+    ]) {
+      if (!json.containsKey(key)) continue;
+      final n = _asInt(json[key]);
+      if (n > 0) return n;
+    }
+    for (final key in const ['members', 'users', 'group_members', 'participants']) {
+      final v = json[key];
+      if (v is List && v.isNotEmpty) return v.length;
+    }
+    // Nested e.g. meta.member_count
+    final meta = json['meta'];
+    if (meta is Map) {
+      final n = _parseMemberCount(Map<String, dynamic>.from(meta));
+      if (n > 0) return n;
+    }
+    return 0;
   }
 
   GroupModel copyWith({

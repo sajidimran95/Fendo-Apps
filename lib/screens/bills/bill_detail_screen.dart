@@ -207,7 +207,7 @@ class _BillDetailScreenState extends State<BillDetailScreen> {
                               Wrap(
                                 spacing: 8,
                                 children: [
-                                  StatusChip(b.status.replaceAll('_', ' ')),
+                                  StatusChip(b.status),
                                   if (b.isRecurring)
                                     StatusChip(b.frequency ?? 'recurring'),
                                 ],

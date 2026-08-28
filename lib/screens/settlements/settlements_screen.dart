@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/format_date.dart';
 import '../../models/settlement_model.dart';
 import '../../services/auth_controller.dart';
 import '../../services/settlements_controller.dart';
@@ -14,7 +15,17 @@ import 'send_payment_request_screen.dart';
 import 'settlement_detail_screen.dart';
 
 class SettlementsScreen extends StatefulWidget {
-  const SettlementsScreen({super.key});
+  const SettlementsScreen({
+    super.key,
+    this.highlightRequestId,
+    this.openRequestsSection = false,
+  });
+
+  /// When opened from a payment-request notification, highlight this request.
+  final int? highlightRequestId;
+
+  /// Scroll focus / show empty state for requests section.
+  final bool openRequestsSection;
 
   @override
   State<SettlementsScreen> createState() => _SettlementsScreenState();
@@ -24,6 +35,7 @@ class _SettlementsScreenState extends State<SettlementsScreen> {
   bool _loading = true;
   List<SettlementModel> _settlements = const [];
   List<SettlementRequest> _requests = const [];
+  final _requestsKey = GlobalKey();
 
   @override
   void initState() {
@@ -40,7 +52,7 @@ class _SettlementsScreenState extends State<SettlementsScreen> {
       try {
         requests = await SettlementsController.instance.loadRequests();
       } on ApiException {
-        // Live GET /settlements/requests is broken (route conflict). Continue.
+        // Live GET /settlements/requests may 404 (route conflict). Keep cache.
         requests = SettlementsController.instance.requests;
       }
       if (!mounted) return;
@@ -48,6 +60,18 @@ class _SettlementsScreenState extends State<SettlementsScreen> {
         _settlements = settlements;
         _requests = requests;
       });
+      if (widget.openRequestsSection || widget.highlightRequestId != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final ctx = _requestsKey.currentContext;
+          if (ctx != null) {
+            Scrollable.ensureVisible(
+              ctx,
+              duration: const Duration(milliseconds: 350),
+              alignment: 0.1,
+            );
+          }
+        });
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
       showApiError(context, e);
@@ -126,7 +150,7 @@ class _SettlementsScreenState extends State<SettlementsScreen> {
                     children: kSettlementPaymentMethods.map((m) {
                       final active = selected == m;
                       return ChoiceChip(
-                        label: Text(m.replaceAll('_', ' ')),
+                        label: Text(formatDisplayLabel(m)),
                         selected: active,
                         onSelected: (_) => setModal(() => selected = m),
                         selectedColor: AppColors.mintWash,
@@ -338,110 +362,205 @@ class _SettlementsScreenState extends State<SettlementsScreen> {
                   ),
                 )
               else ...[
-                if (incoming.isNotEmpty) ...[
-                  const SectionLabel('Incoming requests'),
-                  ...incoming.map(
-                    (r) => SoftTile(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
+                KeyedSubtree(
+                  key: _requestsKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (incoming.isNotEmpty) ...[
+                        const SectionLabel('Incoming requests'),
+                        ...incoming.map((r) {
+                          final highlighted =
+                              widget.highlightRequestId != null &&
+                                  widget.highlightRequestId == r.id;
+                          return SoftTile(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                border: highlighted
+                                    ? Border.all(
+                                        color: AppColors.mint,
+                                        width: 1.5,
+                                      )
+                                    : null,
+                                color: highlighted
+                                    ? AppColors.mintWash.withValues(alpha: 0.4)
+                                    : null,
+                              ),
+                              child: Padding(
+                                padding: highlighted
+                                    ? const EdgeInsets.all(10)
+                                    : EdgeInsets.zero,
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      '${r.requesterName ?? 'Someone'} requested',
-                                      style: GoogleFonts.manrope(
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.forest,
+                                    if (highlighted) ...[
+                                      Text(
+                                        'From notification',
+                                        style: GoogleFonts.manrope(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.mint,
+                                        ),
                                       ),
+                                      const SizedBox(height: 6),
+                                    ],
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                '${r.requesterName ?? 'Someone'} requested',
+                                                style: GoogleFonts.manrope(
+                                                  fontWeight: FontWeight.w700,
+                                                  color: AppColors.forest,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                [
+                                                  if (r.groupName != null)
+                                                    r.groupName!,
+                                                  if (r.message != null &&
+                                                      r.message!.isNotEmpty)
+                                                    r.message!,
+                                                ].join(' · '),
+                                                style: GoogleFonts.manrope(
+                                                  fontSize: 12,
+                                                  color:
+                                                      AppColors.textSecondary,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        MoneyText(
+                                          r.amount,
+                                          currency: r.currency,
+                                          positive: false,
+                                          size: 16,
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      [
-                                        if (r.groupName != null) r.groupName!,
-                                        if (r.message != null &&
-                                            r.message!.isNotEmpty)
-                                          r.message!,
-                                      ].join(' · '),
-                                      style: GoogleFonts.manrope(
-                                        fontSize: 12,
-                                        color: AppColors.textSecondary,
-                                      ),
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: OutlinedButton(
+                                            onPressed: () => _decline(r),
+                                            child: const Text('Decline'),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: FilledButton(
+                                            onPressed: () => _accept(r),
+                                            style: FilledButton.styleFrom(
+                                              backgroundColor: AppColors.mint,
+                                            ),
+                                            child: const Text('Accept / pay'),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
                               ),
-                              MoneyText(r.amount, currency: r.currency, positive: false, size: 16),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: () => _decline(r),
-                                  child: const Text('Decline'),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: FilledButton(
-                                  onPressed: () => _accept(r),
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: AppColors.mint,
-                                  ),
-                                  child: const Text('Accept'),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-                if (outgoing.isNotEmpty) ...[
-                  const SectionLabel('Sent requests'),
-                  ...outgoing.map(
-                    (r) => SoftTile(
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            ),
+                          );
+                        }),
+                      ],
+                      if (outgoing.isNotEmpty) ...[
+                        const SectionLabel('Sent requests'),
+                        ...outgoing.map((r) {
+                          final highlighted =
+                              widget.highlightRequestId != null &&
+                                  widget.highlightRequestId == r.id;
+                          return SoftTile(
+                            child: Row(
                               children: [
-                                Text(
-                                  'You requested ${r.debtorName ?? 'someone'}',
-                                  style: GoogleFonts.manrope(
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.forest,
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      if (highlighted)
+                                        Text(
+                                          'From notification',
+                                          style: GoogleFonts.manrope(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppColors.mint,
+                                          ),
+                                        ),
+                                      Text(
+                                        'You requested ${r.debtorName ?? 'someone'}',
+                                        style: GoogleFonts.manrope(
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.forest,
+                                        ),
+                                      ),
+                                      Text(
+                                        [
+                                          if (r.groupName != null) r.groupName!,
+                                          if (r.message != null &&
+                                              r.message!.isNotEmpty)
+                                            r.message!,
+                                          'pending',
+                                        ].join(' · '),
+                                        style: GoogleFonts.manrope(
+                                          fontSize: 12,
+                                          color: AppColors.textSecondary,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                Text(
-                                  [
-                                    if (r.groupName != null) r.groupName!,
-                                    if (r.message != null &&
-                                        r.message!.isNotEmpty)
-                                      r.message!,
-                                    'pending',
-                                  ].join(' · '),
-                                  style: GoogleFonts.manrope(
-                                    fontSize: 12,
-                                    color: AppColors.textSecondary,
-                                  ),
+                                MoneyText(
+                                  r.amount,
+                                  currency: r.currency,
+                                  size: 16,
                                 ),
                               ],
                             ),
+                          );
+                        }),
+                      ],
+                      if (incoming.isEmpty &&
+                          outgoing.isEmpty &&
+                          (widget.openRequestsSection ||
+                              widget.highlightRequestId != null))
+                        SoftTile(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Payment request',
+                                style: GoogleFonts.manrope(
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.forest,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                widget.highlightRequestId != null
+                                    ? 'Open this screen after a payment request. If you do not see it yet, pull to refresh — the request list may still be syncing.'
+                                    : 'Incoming payment requests appear here. Accept to settle, or send your own request above.',
+                                style: GoogleFonts.manrope(
+                                  fontSize: 13,
+                                  height: 1.4,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
                           ),
-                          MoneyText(r.amount, currency: r.currency, size: 16),
-                        ],
-                      ),
-                    ),
+                        ),
+                    ],
                   ),
-                ],
+                ),
                 const SectionLabel('Recent settlements'),
                 if (_settlements.isEmpty)
                   const EmptyHint(message: 'No settlements yet')
@@ -454,8 +573,9 @@ class _SettlementsScreenState extends State<SettlementsScreen> {
                     final subtitle = [
                       if (s.groupName != null) s.groupName!,
                       if (s.paymentMethod != null)
-                        s.paymentMethod!.replaceAll('_', ' '),
-                      if (s.settlementDate != null) s.settlementDate!,
+                        formatDisplayLabel(s.paymentMethod),
+                      if (s.settlementDate != null)
+                        formatDisplayDate(s.settlementDate),
                     ].join(' · ');
                     return SoftTile(
                       onTap: () {

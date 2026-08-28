@@ -45,7 +45,10 @@ class GroupInviteLink {
     return '$websiteHost/join/$t';
   }
 
-  /// Simple share text: download app + register only.
+  /// Simple share text for SMS / WhatsApp / clipboard.
+  ///
+  /// Always includes the **invite code** so friends can join without
+  /// only seeing a website URL.
   static String shareMessage({
     required String token,
     String? inviteLink,
@@ -53,8 +56,16 @@ class GroupInviteLink {
     List<String> contactNumbers = const [],
     List<String> contactEmails = const [],
   }) {
-    // Keep signature for callers; we don't put codes/links/join steps.
-    return 'Hi! Download the Fendo app and register.\n'
+    final t = extractToken(token);
+    final codeLine = t.isEmpty
+        ? ''
+        : 'Invite code: $t\n\n';
+
+    return 'Hi! Join my group on Fendo.\n\n'
+        '$codeLine'
+        '1. Download the Fendo app and register\n'
+        '2. Open Groups → Join group\n'
+        '3. Paste this invite code\n\n'
         'Website: $websiteHost';
   }
 

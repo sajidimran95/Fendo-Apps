@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/format_date.dart';
 import '../../models/settlement_model.dart';
 import '../../services/auth_controller.dart';
 import '../../services/settlements_controller.dart';
@@ -99,7 +100,7 @@ class _SettlementDetailScreenState extends State<SettlementDetailScreen> {
                             if (s.settlementDate != null) ...[
                               const SizedBox(height: 4),
                               Text(
-                                s.settlementDate!,
+                                formatDisplayDate(s.settlementDate),
                                 style: GoogleFonts.manrope(
                                   color: AppColors.textSecondary,
                                 ),
@@ -114,7 +115,9 @@ class _SettlementDetailScreenState extends State<SettlementDetailScreen> {
                             _row('Group', s.groupName ?? '#${s.groupId}'),
                             _row(
                               'Method',
-                              s.paymentMethod?.replaceAll('_', ' ') ?? '—',
+                              formatDisplayLabel(s.paymentMethod) == ''
+                                  ? '—'
+                                  : formatDisplayLabel(s.paymentMethod),
                             ),
                             _row('Reference', s.paymentReference ?? '—'),
                             _row('Currency', s.currency),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/format_date.dart';
 import '../../models/user_session.dart';
 import '../../services/auth_controller.dart';
 import '../../theme/app_colors.dart';
@@ -144,7 +145,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
                                             ),
                                             if (s.lastUsed != null)
                                               Text(
-                                                'Last used: ${s.lastUsed}',
+                                                'Last used: ${formatDisplayDateTime(s.lastUsed)}',
                                                 style: GoogleFonts.manrope(
                                                   fontSize: 12,
                                                   color:
@@ -153,7 +154,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
                                               ),
                                             if (s.createdAt != null)
                                               Text(
-                                                'Created: ${s.createdAt}',
+                                                'Created: ${formatDisplayDateTime(s.createdAt)}',
                                                 style: GoogleFonts.manrope(
                                                   fontSize: 12,
                                                   color: AppColors.textMuted,

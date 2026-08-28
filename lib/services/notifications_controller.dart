@@ -38,6 +38,8 @@ class NotificationsController extends ChangeNotifier {
         body: 'Maya requested \$30 for hotel',
         type: 'settlement_request',
         read: false,
+        requestId: 1,
+        groupId: 1,
         createdAt: now.subtract(const Duration(hours: 3)).toIso8601String(),
       ),
       AppNotification(

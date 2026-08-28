@@ -1,10 +1,12 @@
+import '../core/utils/app_currency.dart';
+
 class ActivityItem {
   const ActivityItem({
     required this.id,
     required this.eventType,
     required this.description,
     this.amount,
-    this.currency = 'USD',
+    this.currency = AppCurrency.fallback,
     this.actorId,
     this.actorName,
     this.groupId,
@@ -31,12 +33,28 @@ class ActivityItem {
         ? Map<String, dynamic>.from(json['group'] as Map)
         : null;
 
+    final amount =
+        json['amount'] == null ? null : _asDouble(json['amount']);
+
+    // Prefer API currency → group currency → profile (never hard-code USD only).
+    final rawCur = (json['currency'] ??
+            group?['currency'] ??
+            json['group_currency'])
+        ?.toString()
+        .trim();
+    final currency = AppCurrency.normalize(
+      (rawCur != null && rawCur.isNotEmpty) ? rawCur : AppCurrency.profileCode,
+    );
+
+    final rawDesc = json['description']?.toString() ?? '';
+    final description = _localizeDescription(rawDesc, amount, currency);
+
     return ActivityItem(
       id: _asInt(json['id']),
       eventType: json['event_type']?.toString() ?? 'activity',
-      description: json['description']?.toString() ?? '',
-      amount: json['amount'] == null ? null : _asDouble(json['amount']),
-      currency: json['currency']?.toString() ?? 'USD',
+      description: description,
+      amount: amount,
+      currency: currency,
       actorId: actor == null && json['actor_id'] == null
           ? null
           : _asInt(json['actor_id'] ?? actor?['id']),
@@ -51,6 +69,42 @@ class ActivityItem {
           (json['group'] is String ? json['group'].toString() : null),
       createdAt: json['created_at']?.toString(),
     );
+  }
+
+  /// Server activity text hard-codes `$10.00` — swap to profile/group currency.
+  static String _localizeDescription(
+    String desc,
+    double? amount,
+    String currency,
+  ) {
+    if (desc.isEmpty) return desc;
+    final money = amount != null
+        ? AppCurrency.format(amount, code: currency)
+        : null;
+
+    var out = desc;
+    // "( $10.00 )" / "($10.00)"
+    out = out.replaceAllMapped(
+      RegExp(r'\(\s*[$€£¥৳₹]?\s*[\d,]+\.?\d*\s*\)'),
+      (m) => money != null ? '($money)' : m.group(0)!,
+    );
+    // bare $10.00 / ৳100
+    out = out.replaceAllMapped(
+      RegExp(r'[$€£¥৳₹]\s*[\d,]+\.?\d*'),
+      (m) => money ?? m.group(0)!,
+    );
+    // "10.00 USD" trailing code when we know amount
+    if (money != null) {
+      final codes = AppCurrency.codes.join('|');
+      out = out.replaceAllMapped(
+        RegExp(
+          '\\b[\\d,]+\\.?\\d*\\s*($codes)\\b',
+          caseSensitive: false,
+        ),
+        (_) => money,
+      );
+    }
+    return out;
   }
 
   String get timeAgo {

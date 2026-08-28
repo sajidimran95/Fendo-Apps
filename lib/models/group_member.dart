@@ -16,17 +16,44 @@ class GroupMember {
   final double balance;
 
   bool get isAdmin => role == 'admin';
+  bool get hasValidUserId => userId > 0;
 
   factory GroupMember.fromJson(Map<String, dynamic> json) {
-    final user = json['user'] is Map
+    final nestedUser = json['user'] is Map
         ? Map<String, dynamic>.from(json['user'] as Map)
-        : json;
+        : null;
+
+    // Live GET /groups/{id}/members returns flat users:
+    //   { "id": 15, "name": "...", "email": "...", "role": "admin" }
+    // where `id` IS the app user id.
+    //
+    // GET /groups/{id} embeds pivots:
+    //   { "id": 7, "user_id": 15, "user": { "id": 15, "name": "..." } }
+    // where pivot `id` is membership id — never send that on expenses.
+    final explicitUserId = _asInt(
+      json['user_id'] ?? nestedUser?['id'] ?? json['member_user_id'],
+    );
+
+    final userId = explicitUserId > 0
+        ? explicitUserId
+        : _asInt(
+            // Flat member/user rows (Postman / live members list).
+            (nestedUser == null &&
+                    (json['email'] != null ||
+                        json['name'] != null ||
+                        json['role'] != null)
+                ? json['id']
+                : null),
+          );
+
+    final nameSource = nestedUser ?? json;
     return GroupMember(
-      userId: _asInt(json['user_id'] ?? user['id'] ?? json['id']),
-      name: (user['name'] ?? json['name'] ?? '').toString(),
-      email: (user['email'] ?? json['email'] ?? '').toString(),
-      avatar: user['avatar']?.toString() ?? json['avatar']?.toString(),
-      role: (json['role'] ?? 'member').toString(),
+      userId: userId,
+      name: (nameSource['name'] ?? json['name'] ?? '').toString(),
+      email: (nameSource['email'] ?? json['email'] ?? '').toString(),
+      avatar:
+          nestedUser?['avatar']?.toString() ?? json['avatar']?.toString(),
+      role: (json['role'] ?? nestedUser?['role'] ?? 'member').toString(),
       balance: _asDouble(json['balance'] ?? json['net_balance'] ?? 0),
     );
   }

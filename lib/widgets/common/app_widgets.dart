@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/utils/app_currency.dart';
+import '../../core/utils/format_date.dart';
 import '../../services/auth_controller.dart';
 import '../../theme/app_colors.dart';
 
@@ -221,14 +222,18 @@ class SoftTile extends StatelessWidget {
 }
 
 class StatusChip extends StatelessWidget {
-  const StatusChip(this.label, {super.key, this.color});
+  const StatusChip(this.label, {super.key, this.color, this.titleCase = true});
 
   final String label;
   final Color? color;
 
+  /// When true, `due_today` / `paid` become `Due Today` / `Paid`.
+  final bool titleCase;
+
   @override
   Widget build(BuildContext context) {
     final c = color ?? AppColors.mint;
+    final text = titleCase ? formatDisplayLabel(label) : label;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
@@ -236,7 +241,7 @@ class StatusChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
-        label,
+        text,
         style: GoogleFonts.manrope(
           fontSize: 11,
           fontWeight: FontWeight.w700,

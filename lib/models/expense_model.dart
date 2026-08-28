@@ -1,3 +1,5 @@
+import '../core/utils/app_currency.dart';
+
 class ExpensePayer {
   const ExpensePayer({
     required this.userId,
@@ -22,7 +24,7 @@ class ExpensePayer {
 
   Map<String, dynamic> toJson() => {
         'user_id': userId,
-        'amount_paid': amountPaid,
+        'amount_paid': roundMoney(amountPaid),
       };
 
   static int _asInt(dynamic v) {
@@ -36,6 +38,9 @@ class ExpensePayer {
     return double.tryParse(v?.toString() ?? '') ?? 0;
   }
 }
+
+/// Money to 2 decimals for API payloads (avoids float noise / 500s).
+double roundMoney(double v) => (v * 100).round() / 100;
 
 class ExpenseParticipant {
   const ExpenseParticipant({
@@ -72,9 +77,9 @@ class ExpenseParticipant {
 
   Map<String, dynamic> toJson() => {
         'user_id': userId,
-        if (percentage != null) 'percentage': percentage,
+        if (percentage != null) 'percentage': roundMoney(percentage!),
         if (shares != null) 'shares': shares,
-        if (amount != null) 'amount': amount,
+        if (amount != null) 'amount': roundMoney(amount!),
       };
 }
 
@@ -105,7 +110,7 @@ class ExpenseItem {
 
   Map<String, dynamic> toJson() => {
         'name': name,
-        'amount': amount,
+        'amount': roundMoney(amount),
         'assigned_to': assignedTo,
       };
 }
@@ -195,7 +200,13 @@ class ExpenseModel {
       id: ExpensePayer._asInt(json['id']),
       title: (json['title'] ?? '').toString(),
       amount: ExpensePayer._asDouble(json['amount']),
-      currency: (json['currency'] ?? 'USD').toString(),
+      currency: AppCurrency.normalize(
+        (json['currency'] ??
+                group?['currency'] ??
+                json['group_currency'] ??
+                AppCurrency.profileCode)
+            .toString(),
+      ),
       expenseDate: (json['expense_date'] ?? json['date'] ?? '').toString(),
       groupId: ExpensePayer._asInt(json['group_id'] ?? group?['id']),
       groupName: group?['name']?.toString() ?? json['group_name']?.toString(),

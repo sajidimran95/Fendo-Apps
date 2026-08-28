@@ -69,12 +69,48 @@ class SettlementsApi {
     return _parseSettlement(res.data);
   }
 
-  /// 7.4 GET /settlements/requests
+  /// 7.4 GET payment requests.
+  /// Tries several paths — some Laravel setups put `requests` under a
+  /// conflicting `GET /settlements/{id}` route.
   Future<List<SettlementRequest>> listRequests() async {
-    final res = await _client.get('/settlements/requests');
-    return unwrapList(res.data, key: 'requests')
-        .map(SettlementRequest.fromJson)
-        .toList();
+    final paths = <String>[
+      '/settlement-requests',
+      '/payment-requests',
+      '/settlements/requests/list',
+      '/settlements/requests',
+    ];
+    Object? lastError;
+    for (final path in paths) {
+      try {
+        final res = await _client.get(path);
+        final list = unwrapList(
+          res.data,
+          key: 'requests',
+        );
+        if (list.isEmpty) {
+          // Alternate keys used by some backends.
+          final alt = unwrapList(res.data, key: 'settlement_requests');
+          if (alt.isNotEmpty) {
+            return alt.map(SettlementRequest.fromJson).toList();
+          }
+          final map = unwrapMap(res.data);
+          final data = map['data'];
+          if (data is List) {
+            return data
+                .whereType<Map>()
+                .map((e) => SettlementRequest.fromJson(
+                      Map<String, dynamic>.from(e),
+                    ))
+                .toList();
+          }
+        }
+        return list.map(SettlementRequest.fromJson).toList();
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    if (lastError is ApiException) throw lastError;
+    throw ApiException(message: 'Could not load payment requests');
   }
 
   /// 7.5 POST /settlements/requests

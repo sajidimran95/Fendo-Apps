@@ -74,7 +74,13 @@ class ActivityTile extends StatelessWidget {
             ),
           ),
           if (item.amount != null)
-            MoneyText(item.amount!, currency: item.currency, positive: null, size: compact ? 13 : 14),
+            MoneyText(
+              item.amount!,
+              // Prefer row currency; MoneyText falls back to profile if blank.
+              currency: item.currency,
+              positive: null,
+              size: compact ? 13 : 14,
+            ),
         ],
       ),
     );

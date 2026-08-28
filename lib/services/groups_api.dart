@@ -140,9 +140,19 @@ class GroupsApi {
   /// 3.11 GET /groups/{id}/members
   Future<List<GroupMember>> getMembers(int id) async {
     final res = await _client.get('/groups/$id/members');
-    return unwrapList(res.data, key: 'members')
-        .map(GroupMember.fromJson)
-        .toList();
+    try {
+      return unwrapList(res.data, key: 'members')
+          .map(GroupMember.fromJson)
+          .toList();
+    } on ApiException {
+      try {
+        return unwrapList(res.data, key: 'users')
+            .map(GroupMember.fromJson)
+            .toList();
+      } on ApiException {
+        return unwrapList(res.data).map(GroupMember.fromJson).toList();
+      }
+    }
   }
 
   /// 3.12 PUT /groups/{id}/members/{userId}/role

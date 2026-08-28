@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/utils/format_date.dart';
 import '../../core/network/api_exception.dart';
 import '../../models/group_member.dart';
 import '../../models/group_model.dart';
@@ -280,7 +281,7 @@ class _RecordSettlementScreenState extends State<RecordSettlementScreen> {
                         final selected = _method == m;
                         return ChoiceChip(
                           label: Text(
-                            m.replaceAll('_', ' '),
+                            formatDisplayLabel(m),
                             style: GoogleFonts.manrope(
                               fontWeight: FontWeight.w600,
                               color: selected

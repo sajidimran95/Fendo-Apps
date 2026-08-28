@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/format_date.dart';
 import '../../models/notification_model.dart';
 import '../../services/notifications_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
+import '../../utils/notification_router.dart';
 import '../../widgets/common/app_widgets.dart';
 
 class NotificationDetailScreen extends StatefulWidget {
@@ -34,7 +36,9 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
       final updated =
           await NotificationsController.instance.markRead(_n.id);
       if (!mounted) return;
-      setState(() => _n = updated.title.isNotEmpty ? updated : _n.copyWith(read: true));
+      setState(
+        () => _n = updated.title.isNotEmpty ? updated : _n.copyWith(read: true),
+      );
     } on ApiException catch (e) {
       if (!mounted) return;
       showApiError(context, e);
@@ -42,24 +46,21 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
   }
 
   IconData get _icon {
-    switch (_n.type) {
-      case 'expense':
-        return Icons.payments_outlined;
-      case 'settlement_request':
-        return Icons.request_page_outlined;
-      case 'bill':
-        return Icons.receipt_long_outlined;
-      case 'settlement':
-        return Icons.handshake_outlined;
-      default:
-        return Icons.notifications_outlined;
+    final t = (_n.type ?? '').toLowerCase();
+    if (t.contains('expense')) return Icons.payments_outlined;
+    if (t.contains('settlement_request') || t.contains('payment_request')) {
+      return Icons.request_page_outlined;
     }
+    if (t.contains('bill')) return Icons.receipt_long_outlined;
+    if (t.contains('settlement')) return Icons.handshake_outlined;
+    if (t.contains('group')) return Icons.groups_outlined;
+    return Icons.notifications_outlined;
   }
 
   String get _typeLabel {
     final t = _n.type;
     if (t == null || t.isEmpty) return 'General';
-    return t.replaceAll('_', ' ');
+    return formatDisplayLabel(t);
   }
 
   String get _fullDate {
@@ -86,8 +87,34 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
     return '${months[dt.month - 1]} ${dt.day}, ${dt.year} · $h:$m';
   }
 
+  String? get _actionLabel {
+    final t = (_n.type ?? '').toLowerCase();
+    if (t.contains('settlement_request') ||
+        t.contains('settlement_requested') ||
+        t.contains('payment_request') ||
+        (_n.requestId != null && _n.requestId! > 0)) {
+      return 'Open settlements & pay';
+    }
+    if (t.contains('settlement')) return 'View settlements';
+    if (t.contains('expense')) return 'View expense';
+    if (t.contains('bill') || t.contains('reminder')) return 'View bill';
+    if (t.contains('group') || t.contains('member')) return 'Open group';
+    if (_n.isActionable) return 'Open related item';
+    return null;
+  }
+
+  Future<void> _openRelated() async {
+    await NotificationRouter.open(
+      context,
+      notification: _n,
+      markRead: false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final action = _actionLabel;
+
     return Scaffold(
       backgroundColor: AppColors.canvas,
       body: SafeArea(
@@ -160,9 +187,42 @@ class _NotificationDetailScreenState extends State<NotificationDetailScreen> {
                   _metaRow('Status', _n.read ? 'Read' : 'Unread'),
                   _metaRow('Type', _typeLabel),
                   _metaRow('When', _n.timeAgo.isEmpty ? '—' : _n.timeAgo),
+                  if (_n.groupId != null)
+                    _metaRow('Group', '#${_n.groupId}'),
+                  if (_n.requestId != null)
+                    _metaRow('Request', '#${_n.requestId}'),
+                  if (_n.expenseId != null)
+                    _metaRow('Expense', '#${_n.expenseId}'),
+                  if (_n.billId != null) _metaRow('Bill', '#${_n.billId}'),
+                  if (_n.settlementId != null)
+                    _metaRow('Settlement', '#${_n.settlementId}'),
                 ],
               ),
             ),
+            if (action != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                child: FilledButton(
+                  onPressed: _openRelated,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.mint,
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                  child: Text(action),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                child: Text(
+                  'This notification is for viewing only.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.manrope(
+                    fontSize: 13,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ),
             const SizedBox(height: 24),
           ],
         ),

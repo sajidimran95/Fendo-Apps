@@ -91,6 +91,8 @@ class ContactMatchInput {
 
 enum LoanDirection { give, take }
 
+enum LoanStatus { open, paid }
+
 class MockLoan {
   const MockLoan({
     required this.id,
@@ -102,6 +104,7 @@ class MockLoan {
     this.note,
     this.isAppUser = true,
     this.counterpartyUserId,
+    this.status = LoanStatus.open,
   });
 
   final int id;
@@ -113,6 +116,9 @@ class MockLoan {
   final String? note;
   final bool isAppUser;
   final int? counterpartyUserId;
+  final LoanStatus status;
 
   bool get isGive => direction == LoanDirection.give;
+  bool get isPaid => status == LoanStatus.paid;
+  bool get isOpen => status == LoanStatus.open;
 }

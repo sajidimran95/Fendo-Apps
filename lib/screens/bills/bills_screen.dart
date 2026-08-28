@@ -114,7 +114,9 @@ class _BillsScreenState extends State<BillsScreen> {
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: _statuses.map((s) {
-                      final label = s == null ? 'all' : s.replaceAll('_', ' ');
+                      final label = s == null
+                          ? 'All'
+                          : formatDisplayLabel(s);
                       final selected = _status == s;
                       return Padding(
                         padding: const EdgeInsets.only(right: 8),
@@ -177,7 +179,7 @@ class _BillsScreenState extends State<BillsScreen> {
                                 spacing: 6,
                                 children: [
                                   StatusChip(
-                                    b.status.replaceAll('_', ' '),
+                                    b.status,
                                     color: _statusColor(b.status),
                                   ),
                                   if (b.isRecurring)

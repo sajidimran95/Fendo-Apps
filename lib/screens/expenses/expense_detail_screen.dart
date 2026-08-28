@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
 import '../../core/utils/app_currency.dart';
+import '../../core/utils/format_date.dart';
 import '../../models/expense_model.dart';
 import '../../services/expenses_controller.dart';
 import '../../theme/app_colors.dart';
@@ -129,7 +130,7 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                               MoneyText(e.amount, currency: e.currency, positive: false, size: 32),
                               const SizedBox(height: 8),
                               Text(
-                                'Paid by ${e.paidByLabel} · ${e.expenseDate}',
+                                'Paid by ${e.paidByLabel} · ${formatDisplayDate(e.expenseDate)}',
                                 style: GoogleFonts.manrope(
                                   color: AppColors.textSecondary,
                                 ),

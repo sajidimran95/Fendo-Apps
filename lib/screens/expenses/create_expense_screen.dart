@@ -37,6 +37,12 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   bool _scanning = false;
   bool _booting = true;
 
+  /// Simple default: one person paid the full bill (API-safe).
+  bool _onePersonPaidFull = true;
+  /// Show % / shares / custom / multi payer amounts.
+  bool _advancedSplit = false;
+  int? _paidByUserId;
+
   List<GroupModel> _groups = const [];
   GroupModel? _group;
   List<GroupMember> _members = const [];
@@ -116,19 +122,25 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
 
   Future<void> _loadMembers(int groupId) async {
     try {
-      final members = await GroupsController.instance.getMembers(groupId);
+      final raw = await GroupsController.instance.getMembers(groupId);
       if (!mounted) return;
+      final members = raw.where((m) => m.hasValidUserId).toList();
+      final seen = <int>{};
+      final unique = <GroupMember>[];
+      for (final m in members) {
+        if (seen.add(m.userId)) unique.add(m);
+      }
       setState(() {
-        _members = members.isNotEmpty
-            ? members
+        _members = unique.isNotEmpty
+            ? unique
             : [
                 GroupMember(
-                  userId: AuthController.instance.user?.id ?? 1,
+                  userId: AuthController.instance.user?.id ?? 0,
                   name: AuthController.instance.user?.name ?? 'You',
-                  email: AuthController.instance.user?.email ?? 'demo@fendo.app',
+                  email: AuthController.instance.user?.email ?? '',
                   role: 'admin',
                 ),
-              ];
+              ].where((m) => m.hasValidUserId).toList();
         _selectedParticipants
           ..clear()
           ..addAll(_members.map((m) => m.userId));
@@ -140,9 +152,12 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
           );
           _customAmt.putIfAbsent(m.userId, TextEditingController.new);
           _payerAmt.putIfAbsent(m.userId, TextEditingController.new);
+          _payerAmt[m.userId]?.clear();
         }
-        final me = AuthController.instance.user?.id ?? _members.first.userId;
-        _payerAmt[me]?.text = _amount.text;
+        final me = AuthController.instance.user?.id;
+        _paidByUserId = _members.any((m) => m.userId == me)
+            ? me
+            : (_members.isNotEmpty ? _members.first.userId : null);
       });
     } on ApiException catch (e) {
       if (mounted) showApiError(context, e);
@@ -341,9 +356,14 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
 
   List<ExpenseParticipant> _buildParticipants() {
     final selected = _members
-        .where((m) => _selectedParticipants.contains(m.userId))
+        .where(
+          (m) =>
+              m.hasValidUserId && _selectedParticipants.contains(m.userId),
+        )
         .toList();
-    switch (_split) {
+    // Simple mode always equal (reliable API path).
+    final method = _advancedSplit ? _split : 'equal';
+    switch (method) {
       case 'percentage':
         return selected
             .map(
@@ -375,6 +395,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
             )
             .toList();
       default:
+        // equal / itemized: user_id only
         return selected
             .map((m) => ExpenseParticipant(userId: m.userId, name: m.name))
             .toList();
@@ -382,37 +403,85 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
   }
 
   List<ExpensePayer> _buildPayers(double amount) {
-    final fromPaid = _members
-        .where((m) => _selectedParticipants.contains(m.userId))
-        .where((m) {
-          final v = double.tryParse(_payerAmt[m.userId]?.text ?? '') ?? 0;
-          return v > 0;
-        })
-        .map(
-          (m) => ExpensePayer(
+    final total = roundMoney(amount);
+    final validMembers =
+        _members.where((m) => m.hasValidUserId).toList(growable: false);
+    if (validMembers.isEmpty) return const [];
+
+    // Default (and recommended): one person paid the full bill.
+    if (_onePersonPaidFull || !_advancedSplit) {
+      final me = AuthController.instance.user?.id;
+      var payerId = _paidByUserId ?? me ?? 0;
+      if (payerId <= 0 || !validMembers.any((m) => m.userId == payerId)) {
+        payerId = validMembers
+                .where((m) => m.userId == me)
+                .map((m) => m.userId)
+                .firstOrNull ??
+            validMembers.first.userId;
+      }
+      final name = validMembers
+              .where((m) => m.userId == payerId)
+              .map((m) => m.name)
+              .firstOrNull ??
+          'You';
+      return [
+        ExpensePayer(userId: payerId, amountPaid: total, name: name),
+      ];
+    }
+
+    final typed = <ExpensePayer>[];
+    for (final m in validMembers) {
+      final raw = double.tryParse(_payerAmt[m.userId]?.text ?? '') ?? 0;
+      if (raw > 0) {
+        typed.add(
+          ExpensePayer(
             userId: m.userId,
-            amountPaid: double.tryParse(_payerAmt[m.userId]!.text) ?? 0,
+            amountPaid: roundMoney(raw),
             name: m.name,
           ),
-        )
-        .toList();
-
-    if (fromPaid.isNotEmpty) return fromPaid;
-
-    // Default: current user paid the full amount (API still needs payers[]).
-    final me = AuthController.instance.user?.id ??
-        (_members.isNotEmpty ? _members.first.userId : 1);
-    final payer = _members.cast<GroupMember?>().firstWhere(
-          (m) => m?.userId == me,
-          orElse: () => _members.isNotEmpty ? _members.first : null,
         );
+      }
+    }
+    // If the user typed any "Paid" amounts, they must total the bill
+    // (do not silently rewrite — wrong multi-payer sums crash the API).
+    if (typed.isNotEmpty) {
+      return typed;
+    }
+
+    // No paid amounts typed → one person pays full bill.
+    final me = AuthController.instance.user?.id;
+    final meMember = validMembers
+            .where((m) => m.userId == me)
+            .firstOrNull ??
+        validMembers.first;
     return [
       ExpensePayer(
-        userId: payer?.userId ?? me,
-        amountPaid: amount,
-        name: payer?.name ?? 'You',
+        userId: meMember.userId,
+        amountPaid: total,
+        name: meMember.name,
       ),
     ];
+  }
+
+  /// Equal % for selected people when percentage fields are empty / incomplete.
+  void _autoFillEqualPercentages() {
+    final selected = _members
+        .where((m) => _selectedParticipants.contains(m.userId))
+        .toList();
+    if (selected.isEmpty) return;
+    final each = roundMoney(100 / selected.length);
+    var assigned = 0.0;
+    for (var i = 0; i < selected.length; i++) {
+      final id = selected[i].userId;
+      final c = _pct[id];
+      if (c == null) continue;
+      if (i == selected.length - 1) {
+        c.text = roundMoney(100 - assigned).toStringAsFixed(2);
+      } else {
+        c.text = each.toStringAsFixed(2);
+        assigned = roundMoney(assigned + each);
+      }
+    }
   }
 
   Future<void> _save() async {
@@ -424,46 +493,212 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
       showApiError(context, ApiException(message: 'Enter a title'));
       return;
     }
-    final amount = double.tryParse(_amount.text.trim());
-    if (amount == null || amount <= 0) {
+    final amountRaw = double.tryParse(_amount.text.trim());
+    if (amountRaw == null || amountRaw <= 0) {
       showApiError(context, ApiException(message: 'Enter a valid amount'));
       return;
     }
+    final amount = roundMoney(amountRaw);
 
-    final participants = _buildParticipants();
-    if (participants.isEmpty && _split != 'itemized') {
-      showApiError(context, ApiException(message: 'Select participants'));
-      return;
-    }
-    // You alone paying + splitting with only yourself → net balance stays 0.
-    if (participants.length < 2 && _split != 'itemized') {
+    final validMembers =
+        _members.where((m) => m.hasValidUserId).toList(growable: false);
+    if (validMembers.isEmpty) {
       showApiError(
         context,
         ApiException(
           message:
-              'Select at least one friend. Expense with only you does not change balance.',
+              'Could not load group members. Open Group → Members, then try again.',
+        ),
+      );
+      return;
+    }
+    final methodPreview = _advancedSplit ? _split : 'equal';
+    if (validMembers.length < 2 && methodPreview != 'itemized') {
+      showApiError(
+        context,
+        ApiException(
+          message:
+              'This group only has you. Invite at least one friend before splitting an expense.',
         ),
       );
       return;
     }
 
-    final items = _split == 'itemized'
+    final participants = _buildParticipants();
+    if (participants.isEmpty && methodPreview != 'itemized') {
+      showApiError(
+        context,
+        ApiException(message: 'Select who shares this expense'),
+      );
+      return;
+    }
+    // Simple mode always equal (docs 4.2). Advanced keeps chosen method.
+    final method = _advancedSplit ? _split : 'equal';
+
+    // Equal / % / shares need 2+ people or balances never change.
+    if (participants.length < 2 && method != 'itemized') {
+      showApiError(
+        context,
+        ApiException(
+          message:
+              'Select at least you + one friend under “Split with”. Someone must share the bill.',
+        ),
+      );
+      return;
+    }
+
+    // Client-side split checks (server still finalizes amounts).
+    var finalParticipants = participants;
+    if (method == 'percentage') {
+      var sum = finalParticipants.fold<double>(
+        0,
+        (s, p) => s + (p.percentage ?? 0),
+      );
+      // Auto-balance empty / incomplete % so screenshot case (50 + empty) works.
+      if ((sum - 100).abs() > 0.5) {
+        _autoFillEqualPercentages();
+        finalParticipants = _buildParticipants();
+        sum = finalParticipants.fold<double>(
+          0,
+          (s, p) => s + (p.percentage ?? 0),
+        );
+      }
+      if ((sum - 100).abs() > 0.5) {
+        showApiError(
+          context,
+          ApiException(
+            message:
+                'Percentages must add up to 100% (now ${sum.toStringAsFixed(1)}%). '
+                'Example for 2 people: 50 and 50 — not Paid amounts.',
+          ),
+        );
+        return;
+      }
+    } else if (method == 'custom') {
+      final sum = finalParticipants.fold<double>(
+        0,
+        (s, p) => s + (p.amount ?? 0),
+      );
+      if ((sum - amount).abs() > 0.05) {
+        showApiError(
+          context,
+          ApiException(
+            message:
+                'Custom splits must total ${amount.toStringAsFixed(2)} (now ${sum.toStringAsFixed(2)}).',
+          ),
+        );
+        return;
+      }
+    } else if (method == 'shares') {
+      final shares = finalParticipants.fold<double>(
+        0,
+        (s, p) => s + (p.shares ?? 0),
+      );
+      if (shares <= 0) {
+        showApiError(
+          context,
+          ApiException(message: 'Enter at least one share greater than 0'),
+        );
+        return;
+      }
+    }
+
+    final items = method == 'itemized'
         ? _items
             .where((i) => i.name.text.trim().isNotEmpty)
             .map(
               (i) => ExpenseItem(
                 name: i.name.text.trim(),
-                amount: double.tryParse(i.amount.text) ?? 0,
-                assignedTo: i.assigned.toList(),
+                amount: roundMoney(double.tryParse(i.amount.text) ?? 0),
+                assignedTo: i.assigned.where((id) => id > 0).toList(),
               ),
             )
             .toList()
         : <ExpenseItem>[];
 
+    if (method == 'itemized') {
+      if (items.isEmpty) {
+        showApiError(context, ApiException(message: 'Add at least one item'));
+        return;
+      }
+      final itemSum = items.fold<double>(0, (s, i) => s + i.amount);
+      if (itemSum <= 0) {
+        showApiError(
+          context,
+          ApiException(message: 'Item amounts must be greater than 0'),
+        );
+        return;
+      }
+      if ((itemSum - amount).abs() > 0.05) {
+        showApiError(
+          context,
+          ApiException(
+            message:
+                'Items total ${itemSum.toStringAsFixed(2)} must match expense ${amount.toStringAsFixed(2)}',
+          ),
+        );
+        return;
+      }
+      for (final i in items) {
+        if (i.assignedTo.isEmpty) {
+          showApiError(
+            context,
+            ApiException(
+              message: 'Assign “${i.name}” to at least one person',
+            ),
+          );
+          return;
+        }
+      }
+    }
+
     final payers = _buildPayers(amount);
     if (payers.isEmpty) {
-      showApiError(context, ApiException(message: 'Add at least one payer'));
+      showApiError(
+        context,
+        ApiException(message: 'Could not set who paid. Re-select the group.'),
+      );
       return;
+    }
+    final paidSum = payers.fold<double>(0, (s, p) => s + p.amountPaid);
+    if ((paidSum - amount).abs() > 0.05) {
+      showApiError(
+        context,
+        ApiException(
+          message:
+              '“Who paid” total ${paidSum.toStringAsFixed(2)} must equal ${amount.toStringAsFixed(2)}. '
+              'If one person paid, turn ON “One person paid full bill” and leave Paid fields empty. '
+              'Do not put the full amount on every person.',
+        ),
+      );
+      return;
+    }
+
+    // Every payer must appear among members of this group.
+    final memberIds = validMembers.map((m) => m.userId).toSet();
+    for (final p in payers) {
+      if (!memberIds.contains(p.userId)) {
+        showApiError(
+          context,
+          ApiException(
+            message:
+                'Payer is not a group member. Refresh members and try again.',
+          ),
+        );
+        return;
+      }
+    }
+    for (final p in finalParticipants) {
+      if (!memberIds.contains(p.userId)) {
+        showApiError(
+          context,
+          ApiException(
+            message:
+                'A selected person is not a valid group member. Invite them or re-open this screen.',
+          ),
+        );
+        return;
+      }
     }
 
     setState(() => _loading = true);
@@ -477,10 +712,11 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
         expenseDate: _dateStr,
         groupId: _group!.id,
         groupName: _group!.name,
-        categoryId: _categoryId,
-        splitMethod: _split,
+        // Avoid category_id on simple path — optional field; bad IDs → 500.
+        categoryId: _advancedSplit ? _categoryId : null,
+        splitMethod: method,
         payers: payers,
-        participants: participants,
+        participants: finalParticipants,
         items: items,
         isMultiPayer: payers.length > 1,
       );
@@ -695,33 +931,152 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                     },
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    'Split method',
-                    style: GoogleFonts.manrope(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      color: AppColors.forestSoft,
+                  SoftTile(
+                    margin: EdgeInsets.zero,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 4,
+                    ),
+                    child: Column(
+                      children: [
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            'One person paid full bill',
+                            style: GoogleFonts.manrope(
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.forest,
+                            ),
+                          ),
+                          subtitle: Text(
+                            'Recommended. Others owe their share (equal split).',
+                            style: GoogleFonts.manrope(
+                              fontSize: 12,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                          value: _onePersonPaidFull,
+                          activeThumbColor: AppColors.mint,
+                          onChanged: (v) => setState(() {
+                            _onePersonPaidFull = v;
+                            if (v) _advancedSplit = false;
+                          }),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            'Advanced split options',
+                            style: GoogleFonts.manrope(
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.forest,
+                            ),
+                          ),
+                          subtitle: Text(
+                            'Multi-payer, %, shares, custom (may fail on some servers).',
+                            style: GoogleFonts.manrope(
+                              fontSize: 12,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                          value: _advancedSplit,
+                          activeThumbColor: AppColors.mint,
+                          onChanged: (v) => setState(() {
+                            _advancedSplit = v;
+                            if (v) _onePersonPaidFull = false;
+                            if (!v) _split = 'equal';
+                          }),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _splits.map((m) {
-                      return ChoiceChip(
-                        label: Text(m),
-                        selected: _split == m,
-                        onSelected: (_) => setState(() => _split = m),
-                        selectedColor: AppColors.mintWash,
-                      );
-                    }).toList(),
-                  ),
+                  if (_onePersonPaidFull || !_advancedSplit) ...[
+                    const SizedBox(height: 14),
+                    const _FieldLabel('Who paid full amount'),
+                    const SizedBox(height: 8),
+                    if (_members.isEmpty)
+                      Text(
+                        'Load a group first',
+                        style: GoogleFonts.manrope(color: AppColors.textMuted),
+                      )
+                    else
+                      DropdownButtonFormField<int>(
+                        key: ValueKey('payer-$_paidByUserId'),
+                        initialValue: _paidByUserId != null &&
+                                _members.any((m) => m.userId == _paidByUserId)
+                            ? _paidByUserId
+                            : _members.first.userId,
+                        items: _members
+                            .map(
+                              (m) => DropdownMenuItem(
+                                value: m.userId,
+                                child: Text(m.name),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (id) {
+                          if (id == null) return;
+                          setState(() => _paidByUserId = id);
+                        },
+                        decoration: const InputDecoration(
+                          hintText: 'Payer',
+                        ),
+                      ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'With 3 people and equal split: one pays the full bill, '
+                      'the other two each owe their 1/3 share.',
+                      style: GoogleFonts.manrope(
+                        fontSize: 12,
+                        height: 1.35,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                  if (_advancedSplit) ...[
+                    const SizedBox(height: 14),
+                    Text(
+                      'Split method',
+                      style: GoogleFonts.manrope(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: AppColors.forestSoft,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _splits.map((m) {
+                        return ChoiceChip(
+                          label: Text(m),
+                          selected: _split == m,
+                          onSelected: (_) => setState(() {
+                            _split = m;
+                            if (m == 'percentage') {
+                              _autoFillEqualPercentages();
+                            }
+                          }),
+                          selectedColor: AppColors.mintWash,
+                        );
+                      }).toList(),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Split method: Equal (server calculates shares)',
+                      style: GoogleFonts.manrope(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: AppColors.forestSoft,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 22),
-                  if (_split != 'itemized') ...[
+                  if (_split != 'itemized' || !_advancedSplit) ...[
                     Row(
                       children: [
                         Text(
-                          'Participants',
+                          'Split with',
                           style: GoogleFonts.sora(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
@@ -750,13 +1105,16 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                       ..._members.map((m) {
                         final active =
                             _selectedParticipants.contains(m.userId);
+                        final showPayerField =
+                            _advancedSplit && !_onePersonPaidFull;
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: _ParticipantRow(
                             name: m.name,
                             active: active,
                             payerController: _payerAmt[m.userId]!,
-                            split: _split,
+                            split: _advancedSplit ? _split : 'equal',
+                            showPayerField: showPayerField,
                             pctController: _pct[m.userId],
                             sharesController: _shares[m.userId],
                             customController: _customAmt[m.userId],
@@ -774,7 +1132,7 @@ class _CreateExpenseScreenState extends State<CreateExpenseScreen> {
                         );
                       }),
                   ],
-                  if (_split == 'itemized') ...[
+                  if (_advancedSplit && _split == 'itemized') ...[
                     SectionLabel(
                       'Items',
                       actionLabel: 'Add item',
@@ -972,6 +1330,7 @@ class _ParticipantRow extends StatelessWidget {
     required this.payerController,
     required this.split,
     required this.onToggle,
+    this.showPayerField = false,
     this.pctController,
     this.sharesController,
     this.customController,
@@ -982,6 +1341,7 @@ class _ParticipantRow extends StatelessWidget {
   final TextEditingController payerController;
   final String split;
   final ValueChanged<bool> onToggle;
+  final bool showPayerField;
   final TextEditingController? pctController;
   final TextEditingController? sharesController;
   final TextEditingController? customController;
@@ -989,6 +1349,11 @@ class _ParticipantRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    final showExtra = active &&
+        (showPayerField ||
+            split == 'percentage' ||
+            split == 'shares' ||
+            split == 'custom');
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
@@ -1037,12 +1402,14 @@ class _ParticipantRow extends StatelessWidget {
               ),
             ],
           ),
-          if (active) ...[
-            const SizedBox(height: 10),
-            _AmountField(
-              controller: payerController,
-              label: 'Paid',
-            ),
+          if (showExtra) ...[
+            if (showPayerField) ...[
+              const SizedBox(height: 10),
+              _AmountField(
+                controller: payerController,
+                label: 'Paid',
+              ),
+            ],
             if (split == 'percentage' && pctController != null) ...[
               const SizedBox(height: 10),
               _AmountField(

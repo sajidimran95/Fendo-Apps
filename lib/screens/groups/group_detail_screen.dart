@@ -32,15 +32,35 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   @override
   void initState() {
     super.initState();
+    GroupsController.instance.addListener(_onGroupsChanged);
     _load();
+  }
+
+  @override
+  void dispose() {
+    GroupsController.instance.removeListener(_onGroupsChanged);
+    super.dispose();
+  }
+
+  void _onGroupsChanged() {
+    final g = GroupsController.instance.groupById(widget.groupId);
+    if (g != null && mounted) {
+      setState(() => _group = g);
+    }
   }
 
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
       final g = await GroupsController.instance.getGroup(widget.groupId);
+      // Always resolve live count if still zero after getGroup.
+      if (g.memberCount <= 0) {
+        await GroupsController.instance.getMembers(widget.groupId);
+      }
       if (!mounted) return;
-      setState(() => _group = g);
+      setState(() {
+        _group = GroupsController.instance.groupById(widget.groupId) ?? g;
+      });
     } on ApiException catch (e) {
       if (!mounted) return;
       showApiError(context, e);

@@ -234,6 +234,20 @@ class ApiClient {
         lower.contains('could not be converted to string')) {
       return 'Server error while finishing the request. Please refresh.';
     }
+    if (lower.contains('debt') ||
+        (lower.contains('split') && lower.contains('exception')) ||
+        lower.contains('sqlstate') ||
+        lower.contains('integrity constraint')) {
+      return 'Could not save expense splits. Check all members are in the group and try again.';
+    }
+    if (lower == 'server error' ||
+        lower.contains('internal server error') ||
+        lower.contains('http 500')) {
+      // Live Fendo API returns bare "Server Error" for many POST /expenses
+      // failures (ledger bug after the 1st group expense). Keep short + clear.
+      return 'Live server error (HTTP 500). If this group already has an '
+          'expense, 2nd+ create often fails — needs backend fix.';
+    }
     return message;
   }
 }
@@ -296,15 +310,22 @@ List<Map<String, dynamic>> unwrapList(
 
   // Empty / unexpected shape → empty list (new accounts have no rows yet).
   if (list == null) {
+    // Nested named collection: { data: { expenses: [...] } } already handled.
+    // Do not treat unknown maps as empty when a collection may exist under
+    // other keys — only return empty when truly vacant.
     if (body is Map) {
-      final data = body['data'];
-      if (data == null ||
-          (data is Map && data.isEmpty) ||
-          (data is Map && data['data'] == null)) {
-        return const [];
+      final map = Map<String, dynamic>.from(body);
+      final data = map['data'];
+      if (data == null) return const [];
+      if (data is List && data.isEmpty) return const [];
+      if (data is Map) {
+        final inner = Map<String, dynamic>.from(data);
+        final hasAnyList = inner.values.any((v) => v is List);
+        if (!hasAnyList) return const [];
       }
     }
-    throw ApiException(message: 'Invalid list response');
+    // Last try: return empty rather than crash UI lists.
+    return const [];
   }
 
   return list

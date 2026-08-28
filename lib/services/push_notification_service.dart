@@ -10,7 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../core/firebase/firebase_bootstrap.dart';
 import '../firebase_options.dart';
-import '../screens/notifications/notifications_screen.dart';
+import '../utils/notification_router.dart';
 import 'auth_controller.dart';
 import 'activity_controller.dart';
 import 'notifications_controller.dart';
@@ -93,9 +93,9 @@ class PushNotificationService {
 
     final initial = await _messaging.getInitialMessage();
     if (initial != null) {
-      // Open inbox after first frame when user cold-started from a push.
+      // Deep-link after first frame when user cold-started from a push.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _openNotificationsInbox();
+        _openFromPushData(Map<String, dynamic>.from(initial.data));
       });
     }
 
@@ -189,11 +189,23 @@ class PushNotificationService {
 
   void _onMessageOpened(RemoteMessage message) {
     debugPrint('FCM opened: ${message.messageId}');
-    _openNotificationsInbox();
+    _openFromPushData(Map<String, dynamic>.from(message.data));
   }
 
   void _onLocalTap(NotificationResponse response) {
-    _openNotificationsInbox();
+    final raw = response.payload;
+    if (raw == null || raw.isEmpty) {
+      _openFromPushData(const {});
+      return;
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        _openFromPushData(Map<String, dynamic>.from(decoded));
+        return;
+      }
+    } catch (_) {}
+    _openFromPushData(const {});
   }
 
   Future<void> _showLocalFromRemote(RemoteMessage message) async {
@@ -206,6 +218,14 @@ class PushNotificationService {
         message.data['message']?.toString() ??
         '';
     if (title.isEmpty && body.isEmpty) return;
+
+    final payload = <String, dynamic>{
+      ...message.data,
+      if (title.isNotEmpty) 'title': title,
+      if (body.isNotEmpty) 'body': body,
+      if (notification?.title != null) 'title': notification!.title,
+      if (notification?.body != null) 'body': notification!.body,
+    };
 
     final id = message.hashCode & 0x7fffffff;
     await _local.show(
@@ -231,18 +251,18 @@ class PushNotificationService {
           presentSound: true,
         ),
       ),
-      payload: jsonEncode(message.data),
+      payload: jsonEncode(payload),
     );
   }
 
-  void _openNotificationsInbox() {
+  void _openFromPushData(Map<String, dynamic> data) {
     final nav = navigatorKey?.currentState;
-    if (nav == null) return;
-    nav.push(
-      MaterialPageRoute<void>(
-        builder: (_) => const NotificationsScreen(),
-      ),
-    );
+    final ctx = navigatorKey?.currentContext;
+    if (nav == null || ctx == null) return;
+    // Enrich data with notification fields FCM may only put on `notification`.
+    final enriched = Map<String, dynamic>.from(data);
+    // ignore: unawaited_futures
+    NotificationRouter.open(ctx, pushData: enriched);
     // ignore: unawaited_futures
     NotificationsController.instance.loadUnreadCount();
   }

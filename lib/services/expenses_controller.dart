@@ -103,25 +103,85 @@ class ExpensesController extends ChangeNotifier {
         list = list.where((e) => e.groupId == groupId).toList();
       }
       if (from != null && from.isNotEmpty) {
-        list = list.where((e) => e.expenseDate.compareTo(from) >= 0).toList();
+        list = list.where((e) {
+          final d = e.expenseDate.length >= 10
+              ? e.expenseDate.substring(0, 10)
+              : e.expenseDate;
+          return d.compareTo(from) >= 0;
+        }).toList();
       }
       if (to != null && to.isNotEmpty) {
-        list = list.where((e) => e.expenseDate.compareTo(to) <= 0).toList();
+        list = list.where((e) {
+          final d = e.expenseDate.length >= 10
+              ? e.expenseDate.substring(0, 10)
+              : e.expenseDate;
+          return d.compareTo(to) <= 0;
+        }).toList();
       }
       list.sort((a, b) => b.expenseDate.compareTo(a.expenseDate));
       notifyListeners();
       return list;
     }
-    final list = await _api.listExpenses(
-      groupId: groupId,
-      from: from,
-      to: to,
-    );
+
+    List<ExpenseModel> list = const [];
+    Object? loadError;
+    try {
+      list = await _api.listExpenses(
+        groupId: groupId,
+        from: from,
+        to: to,
+      );
+    } catch (e) {
+      debugPrint('loadExpenses primary failed: $e');
+      loadError = e;
+    }
+
+    // Global list empty → load every group's expenses and merge.
+    if (list.isEmpty && (groupId == null || groupId <= 0)) {
+      try {
+        if (GroupsController.instance.groups.isEmpty) {
+          await GroupsController.instance.loadGroups();
+        }
+        final ids = GroupsController.instance.groups.map((g) => g.id);
+        final merged = await _api.listExpensesForGroups(
+          ids,
+          from: from,
+          to: to,
+        );
+        if (merged.isNotEmpty) {
+          list = merged;
+          loadError = null;
+        }
+      } catch (e) {
+        debugPrint('loadExpenses group merge failed: $e');
+        loadError ??= e;
+      }
+    }
+
+    // Merge any newly created items kept locally (same id wins from API).
+    final byId = <int, ExpenseModel>{
+      for (final e in list) if (e.id > 0) e.id: e,
+    };
+    for (final e in _expenses) {
+      if (e.id > 0 && !byId.containsKey(e.id)) {
+        if (groupId != null && groupId > 0 && e.groupId != groupId) continue;
+        byId[e.id] = e;
+      }
+    }
+    final combined = byId.values.toList()
+      ..sort((a, b) => b.expenseDate.compareTo(a.expenseDate));
+
+    // Surface real API failures when we have nothing to show.
+    if (combined.isEmpty && loadError != null) {
+      if (loadError is ApiException) throw loadError;
+      throw ApiException(message: loadError.toString());
+    }
+
     _expenses
       ..clear()
-      ..addAll(list);
+      ..addAll(combined);
     notifyListeners();
-    return list;
+    return combined;
   }
 
   Future<ExpenseModel> getExpense(int id) async {
@@ -186,28 +246,120 @@ class ExpensesController extends ChangeNotifier {
       ActivityController.instance.silentRefresh();
       return expense;
     }
-    final expense = await _api.createExpense(
-      title: title,
-      amount: amount,
-      currency: currency,
-      expenseDate: expenseDate,
-      groupId: groupId,
-      categoryId: categoryId,
-      merchantName: merchantName,
-      splitMethod: splitMethod,
-      payers: payers,
-      participants: participants,
-      items: items,
-      isMultiPayer: isMultiPayer,
-    );
-    _expenses.insert(0, expense);
-    notifyListeners();
-    // Balance cards use GET /balances — refresh so dashboard is not stale.
-    // ignore: unawaited_futures
-    DashboardController.instance.load(force: true);
-    // ignore: unawaited_futures
-    ActivityController.instance.silentRefresh();
-    return expense;
+    try {
+      final expense = await _api.createExpense(
+        title: title,
+        amount: amount,
+        currency: currency,
+        expenseDate: expenseDate,
+        groupId: groupId,
+        categoryId: categoryId,
+        merchantName: merchantName,
+        splitMethod: splitMethod,
+        payers: payers,
+        participants: participants,
+        items: items,
+        isMultiPayer: isMultiPayer,
+      );
+      _expenses.insert(0, expense);
+      notifyListeners();
+      // Balance cards use GET /balances — refresh so dashboard is not stale.
+      // ignore: unawaited_futures
+      DashboardController.instance.load(force: true);
+      // ignore: unawaited_futures
+      ActivityController.instance.silentRefresh();
+      return expense;
+    } on ApiException catch (e) {
+      // Live API sometimes writes the expense then 500s building the response.
+      if (_looksLikeExpenseResponseBug(e) && groupId != null) {
+        final recovered = await _recoverCreatedExpense(
+          title: title,
+          amount: amount,
+          groupId: groupId,
+          expenseDate: expenseDate,
+        );
+        if (recovered != null) {
+          _expenses.insert(0, recovered);
+          notifyListeners();
+          // ignore: unawaited_futures
+          DashboardController.instance.load(force: true);
+          // ignore: unawaited_futures
+          ActivityController.instance.silentRefresh();
+          return recovered;
+        }
+
+        // Confirmed on fendo.posquickcart.com (Postman equal body):
+        // 1st POST /expenses → 201; 2nd+ for same group → bare 500 and no row.
+        if ((e.statusCode ?? 0) == 500) {
+          final existing = await _countGroupExpenses(groupId);
+          if (existing > 0) {
+            throw ApiException(
+              message:
+                  'This group already has expenses. Live server blocks 2nd+ '
+                  'create (HTTP 500). Backend ledger must be fixed.',
+              statusCode: 500,
+            );
+          }
+        }
+      }
+      rethrow;
+    }
+  }
+
+  Future<int> _countGroupExpenses(int groupId) async {
+    try {
+      final list = await _api.listGroupExpenses(groupId);
+      return list.length;
+    } catch (_) {
+      try {
+        return (await _api.listExpenses(groupId: groupId)).length;
+      } catch (_) {
+        return 0;
+      }
+    }
+  }
+
+  bool _looksLikeExpenseResponseBug(ApiException e) {
+    final code = e.statusCode ?? 0;
+    // 201 incomplete body after write, or 500 after write.
+    if (code == 500 || code == 201 || code == 200) return true;
+    final msg = e.message.toLowerCase();
+    return msg.contains('query expression') ||
+        msg.contains('could not be converted to string') ||
+        msg.contains('no query results') ||
+        msg.contains('server error while finishing') ||
+        msg.contains('model not found') ||
+        msg.contains('invalid expense response') ||
+        msg.contains('response was incomplete') ||
+        msg.contains('may have been saved');
+  }
+
+  Future<ExpenseModel?> _recoverCreatedExpense({
+    required String title,
+    required double amount,
+    required int groupId,
+    required String expenseDate,
+  }) async {
+    try {
+      final list = await _api.listExpenses(groupId: groupId);
+      final titleNorm = title.trim().toLowerCase();
+      ExpenseModel? best;
+      for (final e in list) {
+        if (e.title.trim().toLowerCase() != titleNorm) continue;
+        if ((e.amount - amount).abs() > 0.05) continue;
+        final date = e.expenseDate.length >= 10
+            ? e.expenseDate.substring(0, 10)
+            : e.expenseDate;
+        final want = expenseDate.length >= 10
+            ? expenseDate.substring(0, 10)
+            : expenseDate;
+        if (date != want) continue;
+        if (best == null || e.id > best.id) best = e;
+      }
+      return best;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<ExpenseModel> updateExpense(

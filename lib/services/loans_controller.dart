@@ -8,10 +8,11 @@ import '../models/expense_model.dart';
 import 'auth_controller.dart';
 import 'expenses_api.dart';
 
-/// Personal loans saved as expenses titled with [loanPrefix].
+/// Personal loans are IOUs (assets/liabilities), **not** spending expenses.
 ///
-/// Stored as personal (no group) solo-split expenses so the server debt ledger
-/// is not touched — multi-user expense creates currently 500 on this API.
+/// They are stored on the backend as personal expenses with a `Loan:` /
+/// `Loan paid:` title so they can be listed/repaid without multi-user API bugs.
+/// Spending reports and expense lists should [exclude] those titles.
 class LoansController extends ChangeNotifier {
   LoansController._() {
     if (ApiConfig.demoAuth) {
@@ -22,8 +23,11 @@ class LoansController extends ChangeNotifier {
   static final LoansController instance = LoansController._();
 
   static const loanPrefix = 'Loan:';
+  static const loanPaidPrefix = 'Loan paid:';
   static const lentPrefix = 'Loan: Lent to ';
   static const borrowedPrefix = 'Loan: Borrowed from ';
+  static const lentPaidPrefix = 'Loan paid: Lent to ';
+  static const borrowedPaidPrefix = 'Loan paid: Borrowed from ';
   static const _uidTag = 'fendo_uid:';
   static const _phoneTag = 'fendo_phone:';
   static const _emailTag = 'fendo_email:';
@@ -36,27 +40,47 @@ class LoansController extends ChangeNotifier {
   bool _loaded = false;
 
   List<MockLoan> get loans => List.unmodifiable(_loans);
+  List<MockLoan> get openLoans =>
+      _loans.where((l) => l.isOpen).toList(growable: false);
+  List<MockLoan> get paidLoans =>
+      _loans.where((l) => l.isPaid).toList(growable: false);
+
   bool get loading => _loading;
   bool get loaded => _loaded;
 
+  /// Open loans only (paid loans leave the net / “active” totals).
   double get youLent =>
-      _loans.where((l) => l.isGive).fold(0.0, (s, l) => s + l.amount);
+      openLoans.where((l) => l.isGive).fold(0.0, (s, l) => s + l.amount);
 
   double get youBorrowed =>
-      _loans.where((l) => !l.isGive).fold(0.0, (s, l) => s + l.amount);
+      openLoans.where((l) => !l.isGive).fold(0.0, (s, l) => s + l.amount);
 
   /// Positive = net you are owed from personal loans; negative = you owe.
   double get netBalance => youLent - youBorrowed;
 
-  int get activeCount => _loans.length;
+  int get activeCount => openLoans.length;
 
   List<MockLoan> recent({int limit = 2}) =>
-      _loans.take(limit).toList(growable: false);
+      openLoans.take(limit).toList(growable: false);
+
+  /// Title helpers for loans stored as personal expenses (not real spending).
+  static bool isLoanExpenseTitle(String? title) {
+    final t = (title ?? '').trim().toLowerCase();
+    return t.startsWith('loan:') || t.startsWith('loan paid:');
+  }
+
+  static bool isLoanPaidTitle(String? title) {
+    final t = (title ?? '').trim().toLowerCase();
+    return t.startsWith('loan paid:');
+  }
 
   Future<void> load({bool force = false}) async {
     if (ApiConfig.demoAuth) {
-      if (!_loaded) {
-        _loans = List<MockLoan>.from(MockLoans.seedLoans);
+      if (!_loaded || force) {
+        // Keep local mutations (paid) when reloading without force.
+        if (!_loaded) {
+          _loans = List<MockLoan>.from(MockLoans.seedLoans);
+        }
         _loaded = true;
         notifyListeners();
       }
@@ -71,9 +95,14 @@ class LoansController extends ChangeNotifier {
       final meId = AuthController.instance.user?.id;
       final expenses = await _expensesApi.listExpenses();
       _loans = expenses
-          .where((e) => e.title.trim().toLowerCase().startsWith('loan:'))
+          .where((e) => isLoanExpenseTitle(e.title))
           .map((e) => _fromExpense(e, meId))
-          .toList();
+          .toList()
+        ..sort((a, b) {
+          // Open first, then newest date.
+          if (a.isOpen != b.isOpen) return a.isOpen ? -1 : 1;
+          return b.date.compareTo(a.date);
+        });
       _loaded = true;
     } finally {
       _loading = false;
@@ -81,10 +110,7 @@ class LoansController extends ChangeNotifier {
     }
   }
 
-  /// Creates a loan on the server (or local demo).
-  ///
-  /// [counterpartyUserId] is required for On Fendo users. Non-app contacts can
-  /// be saved with [counterpartyPhone] / [counterpartyEmail] only.
+  /// Creates a loan IOU (stored as titled expense; **not** weekly spending).
   Future<MockLoan> createLoan({
     required String personName,
     required double amount,
@@ -132,7 +158,7 @@ class LoansController extends ChangeNotifier {
         ? '$lentPrefix$personName'
         : '$borrowedPrefix$personName';
 
-    // Solo personal expense — avoids broken multi-user DebtService updates.
+    // Solo personal expense — storage only; exclude from spend reports.
     final expense = await _expensesApi.createExpense(
       title: title,
       amount: amount,
@@ -156,11 +182,43 @@ class LoansController extends ChangeNotifier {
       direction: direction,
       amount: amount,
       isAppUser: isAppUser,
+      status: LoanStatus.open,
     );
     _loans.insert(0, loan);
     _loaded = true;
     notifyListeners();
     return loan;
+  }
+
+  /// Mark loan as repaid. Does **not** create a new spending expense.
+  Future<MockLoan> markPaid(int loanId) async {
+    final i = _loans.indexWhere((l) => l.id == loanId);
+    if (i < 0) throw ApiException(message: 'Loan not found');
+    final loan = _loans[i];
+    if (loan.isPaid) return loan;
+
+    if (ApiConfig.demoAuth) {
+      final updated = loan.copyWith(status: LoanStatus.paid);
+      _loans[i] = updated;
+      notifyListeners();
+      return updated;
+    }
+
+    final title = loan.isGive
+        ? '$lentPaidPrefix${loan.personName}'
+        : '$borrowedPaidPrefix${loan.personName}';
+
+    try {
+      await _expensesApi.updateExpense(loanId, title: title);
+    } on ApiException {
+      // If update fails, still try so UI can recover after reload.
+      rethrow;
+    }
+
+    final updated = loan.copyWith(status: LoanStatus.paid);
+    _loans[i] = updated;
+    notifyListeners();
+    return updated;
   }
 
   /// Local-only add (demo). Prefer [createLoan] for live API.
@@ -186,6 +244,7 @@ class LoansController extends ChangeNotifier {
       note: note,
       counterpartyUserId: counterpartyUserId,
       isAppUser: isAppUser,
+      status: LoanStatus.open,
     );
     _loans.insert(0, loan);
     notifyListeners();
@@ -242,6 +301,7 @@ class LoansController extends ChangeNotifier {
   MockLoan _fromExpense(ExpenseModel e, int? meId) {
     final title = e.title.trim();
     final titleLower = title.toLowerCase();
+    final paid = isLoanPaidTitle(title);
     final titledGive = titleLower.contains('lent to');
     final titledTake = titleLower.contains('borrowed from');
 
@@ -288,18 +348,36 @@ class LoansController extends ChangeNotifier {
       date: date,
       note: meta.note,
       counterpartyUserId: counterpartyId,
+      status: paid ? LoanStatus.paid : LoanStatus.open,
     );
   }
 
   String _nameFromTitle(String title, {required bool isGive}) {
-    final prefix = isGive ? lentPrefix : borrowedPrefix;
-    if (title.startsWith(prefix)) {
-      return title.substring(prefix.length).trim();
+    for (final prefix in [
+      if (isGive) lentPaidPrefix else borrowedPaidPrefix,
+      if (isGive) lentPrefix else borrowedPrefix,
+      loanPaidPrefix,
+      loanPrefix,
+    ]) {
+      if (title.startsWith(prefix)) {
+        return title.substring(prefix.length).trim();
+      }
     }
-    if (title.startsWith(loanPrefix)) {
-      return title.substring(loanPrefix.length).trim();
+    // Strip generic paid/open markers then leftover verb phrases.
+    var rest = title;
+    if (rest.toLowerCase().startsWith('loan paid:')) {
+      rest = rest.substring('Loan paid:'.length).trim();
+    } else if (rest.toLowerCase().startsWith('loan:')) {
+      rest = rest.substring('Loan:'.length).trim();
     }
-    return title;
+    final lower = rest.toLowerCase();
+    if (lower.startsWith('lent to ')) {
+      return rest.substring('lent to '.length).trim();
+    }
+    if (lower.startsWith('borrowed from ')) {
+      return rest.substring('borrowed from '.length).trim();
+    }
+    return rest;
   }
 }
 
@@ -311,6 +389,7 @@ extension on MockLoan {
     String? note,
     int? counterpartyUserId,
     bool? isAppUser,
+    LoanStatus? status,
   }) {
     return MockLoan(
       id: id,
@@ -322,6 +401,7 @@ extension on MockLoan {
       note: note ?? this.note,
       isAppUser: isAppUser ?? this.isAppUser,
       counterpartyUserId: counterpartyUserId ?? this.counterpartyUserId,
+      status: status ?? this.status,
     );
   }
 }

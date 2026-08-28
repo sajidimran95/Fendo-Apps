@@ -480,7 +480,7 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Send this short message. They only need to download Fendo and register.',
+                'Copy includes Invite code: … plus download steps. Share via WhatsApp / SMS.',
                 style: GoogleFonts.manrope(
                   color: AppColors.textSecondary,
                   height: 1.35,
@@ -492,19 +492,19 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                 style: GoogleFonts.manrope(
                   fontWeight: FontWeight.w600,
                   color: AppColors.forest,
-                  fontSize: 15,
+                  fontSize: 14,
                   height: 1.4,
                 ),
               ),
               const SizedBox(height: 16),
               AuthPrimaryButton(
-                label: 'Copy message',
+                label: 'Copy invite message',
                 onPressed: () async {
                   await Clipboard.setData(ClipboardData(text: shareText));
                   if (!ctx.mounted) return;
                   Navigator.pop(ctx);
                   if (!mounted) return;
-                  showApiMessage(context, 'Message copied');
+                  showApiMessage(context, 'Invite message copied');
                 },
               ),
             ],
@@ -826,10 +826,10 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
                                   ClipboardData(text: _shareClipboard),
                                 );
                                 if (!context.mounted) return;
-                                showApiMessage(context, 'Message copied');
+                                showApiMessage(context, 'Invite message copied');
                               },
                               icon: const Icon(Icons.copy_rounded),
-                              label: const Text('Copy message'),
+                              label: const Text('Copy invite message'),
                             ),
                           ],
                           const SizedBox(height: 8),

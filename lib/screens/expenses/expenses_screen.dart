@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/utils/format_date.dart';
 import '../../models/expense_model.dart';
 import '../../models/group_model.dart';
 import '../../services/expenses_controller.dart';
 import '../../services/groups_controller.dart';
+import '../../services/loans_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
 import '../../widgets/common/app_widgets.dart';
@@ -23,6 +25,7 @@ class ExpensesScreen extends StatefulWidget {
 
 class _ExpensesScreenState extends State<ExpensesScreen> {
   bool _loading = true;
+  String? _error;
   List<ExpenseModel> _items = const [];
   List<GroupModel> _groups = const [];
   int? _groupId;
@@ -53,17 +56,29 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final list = await ExpensesController.instance.loadExpenses(
         groupId: _groupId,
         from: _fromStr,
         to: _toStr,
       );
+      // Hide personal loan IOUs — shown on Loans screen only.
+      final visible = list
+          .where((e) => !LoansController.isLoanExpenseTitle(e.title))
+          .toList();
       if (!mounted) return;
-      setState(() => _items = list);
+      setState(() => _items = visible);
     } on ApiException catch (e) {
-      if (mounted) showApiError(context, e);
+      if (!mounted) return;
+      setState(() => _error = e.displayMessage);
+      showApiError(context, e);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -124,7 +139,11 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             children: [
               AppHeader(
                 title: 'Expenses',
-                subtitle: 'All shared spending',
+                subtitle: _loading
+                    ? 'Loading…'
+                    : (_items.isEmpty
+                        ? 'Shared group spending'
+                        : '${_items.length} expense${_items.length == 1 ? '' : 's'}'),
                 onBack: () => Navigator.pop(context),
               ),
               Padding(
@@ -138,9 +157,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                         _groupId == null
                             ? 'All groups'
                             : _groups
-                                .where((g) => g.id == _groupId)
-                                .map((g) => g.name)
-                                .firstOrNull ??
+                                    .where((g) => g.id == _groupId)
+                                    .map((g) => g.name)
+                                    .firstOrNull ??
                                 'Group',
                       ),
                       selected: _groupId != null,
@@ -166,16 +185,22 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                           ),
                         );
                         if (selected == null) return;
-                        setState(() => _groupId = selected == -1 ? null : selected);
+                        setState(
+                          () => _groupId = selected == -1 ? null : selected,
+                        );
                         _load();
                       },
                     ),
                     ActionChip(
-                      label: Text(_from == null ? 'From date' : 'From $_fromStr'),
+                      label: Text(
+                        _from == null ? 'From date' : 'From $_fromStr',
+                      ),
                       onPressed: _pickFrom,
                     ),
                     ActionChip(
-                      label: Text(_to == null ? 'To date' : 'To $_toStr'),
+                      label: Text(
+                        _to == null ? 'To date' : 'To $_toStr',
+                      ),
                       onPressed: _pickTo,
                     ),
                     if (_from != null || _to != null || _groupId != null)
@@ -185,7 +210,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                           setState(() {
                             _from = null;
                             _to = null;
-                            if (widget.initialGroupId == null) _groupId = null;
+                            if (widget.initialGroupId == null) {
+                              _groupId = null;
+                            }
                           });
                           _load();
                         },
@@ -200,15 +227,70 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                     child: CircularProgressIndicator(color: AppColors.mint),
                   ),
                 )
+              else if (_error != null && _items.isEmpty)
+                SoftTile(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Could not load expenses',
+                        style: GoogleFonts.manrope(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.forest,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _error!,
+                        style: GoogleFonts.manrope(
+                          fontSize: 13,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      FilledButton(
+                        onPressed: _load,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.mint,
+                        ),
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                )
               else if (_items.isEmpty)
-                const EmptyHint(message: 'No expenses match these filters')
+                SoftTile(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'No expenses yet',
+                        style: GoogleFonts.manrope(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.forest,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Pull to refresh, clear date filters, or add a group expense. '
+                        'Personal loans appear under Loans, not here.',
+                        style: GoogleFonts.manrope(
+                          fontSize: 13,
+                          height: 1.4,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
               else
                 ..._items.map(
                   (e) => SoftTile(
                     onTap: () async {
                       await Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (_) => ExpenseDetailScreen(expenseId: e.id),
+                          builder: (_) =>
+                              ExpenseDetailScreen(expenseId: e.id),
                         ),
                       );
                       _load();
@@ -233,14 +315,14 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                e.title,
+                                e.title.isEmpty ? 'Expense' : e.title,
                                 style: GoogleFonts.manrope(
                                   fontWeight: FontWeight.w700,
                                   color: AppColors.forest,
                                 ),
                               ),
                               Text(
-                                '${e.groupName ?? 'Group'} · ${e.paidByLabel} · ${e.expenseDate}',
+                                '${e.groupName ?? (e.groupId > 0 ? 'Group ${e.groupId}' : 'Personal')} · ${e.paidByLabel} · ${formatDisplayDate(e.expenseDate)}',
                                 style: GoogleFonts.manrope(
                                   fontSize: 12,
                                   color: AppColors.textSecondary,
@@ -249,7 +331,12 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                             ],
                           ),
                         ),
-                        MoneyText(e.amount, currency: e.currency, positive: false, size: 16),
+                        MoneyText(
+                          e.amount,
+                          currency: e.currency,
+                          positive: false,
+                          size: 16,
+                        ),
                       ],
                     ),
                   ),

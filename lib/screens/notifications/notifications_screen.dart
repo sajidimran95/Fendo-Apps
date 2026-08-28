@@ -6,8 +6,8 @@ import '../../models/notification_model.dart';
 import '../../services/notifications_controller.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/api_feedback.dart';
+import '../../utils/notification_router.dart';
 import '../../widgets/common/app_widgets.dart';
-import 'notification_detail_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -41,12 +41,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
-  Future<void> _openDetail(AppNotification n) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => NotificationDetailScreen(notification: n),
-      ),
-    );
+  Future<void> _open(AppNotification n) async {
+    await NotificationRouter.open(context, notification: n);
     if (!mounted) return;
     setState(() {
       _items = NotificationsController.instance.items;
@@ -109,7 +105,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               else
                 ..._items.map((n) {
                   return SoftTile(
-                    onTap: () => _openDetail(n),
+                    onTap: () => _open(n),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [

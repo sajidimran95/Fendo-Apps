@@ -103,6 +103,12 @@ class SpendingTotals {
     final map = <String, double>{};
 
     for (final e in expenses) {
+      // Loans are IOUs — do not fold into personal spending-by-person.
+      if (e.title.trim().toLowerCase().startsWith('loan:') ||
+          e.title.trim().toLowerCase().startsWith('loan paid:')) {
+        continue;
+      }
+
       final d = parseDate(e.expenseDate);
       if (d != null) {
         final day = DateTime(d.year, d.month, d.day);
